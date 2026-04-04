@@ -12,7 +12,7 @@ from tqdm import tqdm
 # 1. KONFIGURASI
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
-CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_last.pth"
+CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_best.pth"
 
 # Direktori Output Baru
 SUBMISSION_DIR = "./submission"
