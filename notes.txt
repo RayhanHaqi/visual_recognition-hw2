@@ -5,3 +5,17 @@ If you want to use the NVIDIA GeForce RTX 5090 GPU with PyTorch, please check th
 pip uninstall torch torchvision torchaudio -y
 
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+
+Eksperimen 1: Heavy Data Augmentation
+
+Eksperimen 2: Mosaic atau MixUp (Opsional untuk DETR)
+
+Eksperimen 3: Cosine Annealing Learning Rate & Warmup
+
+Eksperimen 4: Epoch Lebih Panjang + Early Stopping
+
+Eksperimen 5: Penyesuaian Bobot Loss (Loss Re-weighting)
+
+Eksperimen 6: Test Time Augmentation (TTA)
+
+Eksperimen 7: Model Ensembling
