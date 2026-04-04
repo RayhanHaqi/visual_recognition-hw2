@@ -1,0 +1,58 @@
+⚠️ DETECTED CUDA OOM! Reducing batch size...
+🔄 Retrying Epoch 1 with Batch Size: 28
+
+--- Epoch 1/20 (Batch Size: 28) ---
+loading annotations into memory...
+Done (t=0.08s)
+creating index...
+index created!
+loading annotations into memory...
+Done (t=0.16s)
+creating index...
+index created!
+Training:   0%|                                                                                                                                                | 0/1074 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-augmentation.py", line 316, in <module>
+    main()
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-augmentation.py", line 279, in main
+    train_loss = train_one_epoch(model, train_loader, optimizer, scaler, DEVICE)
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-augmentation.py", line 167, in train_one_epoch
+    for images, targets, _, _ in progress_bar:
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 720, in __next__
+    data = self._next_data()
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1527, in _next_data
+    return self._process_data(data, worker_id)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1565, in _process_data
+    data.reraise()
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/_utils.py", line 774, in reraise
+    raise exception
+ValueError: Caught ValueError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/worker.py", line 374, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 54, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 54, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-augmentation.py", line 103, in __getitem__
+    transformed = self.transforms(image=image_np, bboxes=boxes, category_ids=category_ids)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/composition.py", line 607, in __call__
+    self.preprocess(data)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/composition.py", line 647, in preprocess
+    self._preprocess_processors(data)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/composition.py", line 674, in _preprocess_processors
+    processor.preprocess(data)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/utils.py", line 256, in preprocess
+    data[data_name] = self.check_and_convert(data[data_name], shape, direction="to")
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/bbox_utils.py", line 340, in check_and_convert
+    self.check(converted_data, shape)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/bbox_utils.py", line 355, in check
+    check_bboxes(data)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/augmentations/utils.py", line 245, in wrapper
+    return func(*args, **kwargs)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/albumentations/core/bbox_utils.py", line 614, in check_bboxes
+    raise ValueError(
+ValueError: Expected x_min for bbox [-0.01176471  0.19672132  0.02352941  0.8196721   1.        ] to be in the range [0.0, 1.0], got -0.0117647061124444.
+
