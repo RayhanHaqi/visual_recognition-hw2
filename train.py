@@ -21,7 +21,8 @@ DATA_ROOT_VAL = "./datasets/valid"
 ANN_FILE_VAL = "./datasets/valid.json"      
 
 CHECKPOINT_DIR = "./checkpoints"
-LOG_FILE = "training_log.csv"
+LOG_DIR = "./logs"
+LOG_FILE = "./logs/training_log.csv"
 NUM_CLASSES = 10                     
 INITIAL_BATCH_SIZE = 32               # Pakai 32 untuk RTX 5090
 LR = 1e-4
@@ -30,6 +31,7 @@ IMG_SIZE = 640
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 
 # Inisialisasi File Log
 if not os.path.exists(LOG_FILE):
