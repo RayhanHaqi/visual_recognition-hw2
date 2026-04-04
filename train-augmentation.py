@@ -77,6 +77,9 @@ val_transform = A.Compose([
 # ==========================================
 # 3. DATA PREPARATION CUSTOM
 # ==========================================
+# ==========================================
+# 3. DATA PREPARATION CUSTOM (DENGAN CLIPPING)
+# ==========================================
 class CustomCocoDetection(CocoDetection):
     def __init__(self, root, annFile, transform=None):
         super().__init__(root, annFile)
@@ -90,17 +93,35 @@ class CustomCocoDetection(CocoDetection):
         orig_w, orig_h = image.size 
         image_np = np.array(image.convert("RGB"))
 
-        # Ekstrak Box dan Label
+        # Ekstrak Box dan Label dengan CLIPPING
         boxes, category_ids = [], []
         for obj in target:
             x, y, w, h = obj['bbox']
-            if w > 0 and h > 0:
-                boxes.append([x, y, w, h])
+            
+            # 1. Pastikan kotak tidak tumpah ke kiri/atas (minimal 0)
+            x_min = max(0.0, float(x))
+            y_min = max(0.0, float(y))
+            
+            # 2. Pastikan kotak tidak tumpah ke kanan/bawah (maksimal lebar/tinggi gambar)
+            x_max = min(float(orig_w), float(x + w))
+            y_max = min(float(orig_h), float(y + h))
+            
+            # 3. Hitung lebar dan tinggi baru setelah digunting
+            new_w = x_max - x_min
+            new_h = y_max - y_min
+            
+            # 4. Hanya masukkan kotak jika masih memiliki luas (tidak hilang)
+            if new_w > 0.0 and new_h > 0.0:
+                boxes.append([x_min, y_min, new_w, new_h])
                 category_ids.append(obj['category_id'] - 1) 
         
         if self.transforms is not None:
-            # Lewatkan ke Albumentations
-            transformed = self.transforms(image=image_np, bboxes=boxes, category_ids=category_ids)
+            # Jika dataset kosong dari kotak valid, skip augmentasi yang bikin error
+            if len(boxes) == 0:
+                transformed = self.transforms(image=image_np, bboxes=[], category_ids=[])
+            else:
+                transformed = self.transforms(image=image_np, bboxes=boxes, category_ids=category_ids)
+            
             image_tensor = transformed['image']
             boxes = transformed['bboxes']
             category_ids = transformed['category_ids']
