@@ -15,6 +15,7 @@ from PIL import Image
 import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from pathlib import Path
 
 # ==========================================
 # 1. KONFIGURASI AWAL
@@ -31,7 +32,7 @@ INITIAL_BATCH_SIZE = 32
 LR = 2e-4  # Dinaikkan sedikit karena kita pakai Scheduler
 EPOCHS = 50 # Ditingkatkan agar model bisa konvergen
 IMG_SIZE = 640                       
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
@@ -291,10 +292,10 @@ def main():
 
             if map_50_95 > best_map:
                 best_map = map_50_95
-                torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/rtdetr_r50_best.pth")
+                torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem()}_best.pth")
                 print(f"⭐ Best Model Saved! (New Highest mAP: {best_map:.4f})")
                 
-            torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/rtdetr_r50_last.pth")
+            torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem()}_last.pth")
 
             epoch += 1 
 
