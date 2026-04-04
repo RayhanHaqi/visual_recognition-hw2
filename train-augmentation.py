@@ -34,7 +34,7 @@ INITIAL_BATCH_SIZE = 32
 LR = 1e-4
 EPOCHS = 20
 IMG_SIZE = 640                       
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
