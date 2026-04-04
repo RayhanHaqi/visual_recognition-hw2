@@ -12,7 +12,7 @@ from tqdm import tqdm
 # 1. KONFIGURASI
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
-CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_best.pth"
+CHECKPOINT_PATH = "./checkpoints/train-aug-scheduler_best.pth"
 
 # Direktori Output Baru
 SUBMISSION_DIR = "./submission"
@@ -21,7 +21,7 @@ os.makedirs(SUBMISSION_DIR, exist_ok=True)
 IMG_SIZE = 640
 NUM_CLASSES = 10
 CONF_THRESHOLD = 0.05                      
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 # Ekstrak nama model dari CHECKPOINT_PATH (misal: "rtdetr_r50_best")
 MODEL_NAME = os.path.splitext(os.path.basename(CHECKPOINT_PATH))[0]

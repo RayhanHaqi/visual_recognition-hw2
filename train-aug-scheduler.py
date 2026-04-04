@@ -292,10 +292,10 @@ def main():
 
             if map_50_95 > best_map:
                 best_map = map_50_95
-                torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem()}_best.pth")
+                torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem}_best.pth")
                 print(f"⭐ Best Model Saved! (New Highest mAP: {best_map:.4f})")
                 
-            torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem()}_last.pth")
+            torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{Path(__file__).stem}_last.pth")
 
             epoch += 1 
 
