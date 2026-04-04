@@ -23,7 +23,7 @@ ANN_FILE_VAL = "./datasets/valid.json"
 CHECKPOINT_DIR = "./checkpoints"
 LOG_FILE = "training_log.csv"
 NUM_CLASSES = 10                     
-INITIAL_BATCH_SIZE = 16               
+INITIAL_BATCH_SIZE = 32               # Pakai 32 untuk RTX 5090
 LR = 1e-4
 EPOCHS = 20
 IMG_SIZE = 640                       
@@ -38,19 +38,15 @@ if not os.path.exists(LOG_FILE):
         writer.writerow(["Epoch", "Train_Loss", "Val_Loss", "mAP_50_95", "mAP_50", "mAP_75"])
 
 # ==========================================
-# 2. DATA PREPARATION CUSTOM
+# 2. DATA PREPARATION (FIXED SCALING MATH)
 # ==========================================
 class CustomCocoDetection(CocoDetection):
-    """
-    Subclass khusus agar DataLoader juga mengembalikan Image ID dan 
-    Resolusi Asli gambar, yang sangat dibutuhkan untuk menghitung mAP.
-    """
     def __getitem__(self, index):
         id = self.ids[index]
         image = self._load_image(id)
         target = self._load_target(id)
         
-        orig_w, orig_h = image.size # Catat ukuran asli
+        orig_w, orig_h = image.size 
         
         if self.transforms is not None:
             image, target = self.transforms(image, target)
@@ -64,19 +60,22 @@ def collate_fn(batch):
     orig_sizes = [(item[3], item[4]) for item in batch]
     return images, targets, image_ids, orig_sizes
 
-def prepare_targets_for_detr(targets, device, img_size=640):
+def prepare_targets_for_detr(targets, orig_sizes, device):
     formatted_targets = []
-    for target in targets:
+    for i, target in enumerate(targets):
         boxes = []
         labels = []
+        orig_w, orig_h = orig_sizes[i]
+        
         for obj in target:
             x, y, w, h = obj['bbox']
             if w <= 0 or h <= 0: continue
             
-            cx = (x + w / 2) / img_size
-            cy = (y + h / 2) / img_size
-            nw = w / img_size
-            nh = h / img_size
+            # Normalisasi menggunakan resolusi ASLI, bukan 640
+            cx = (x + w / 2) / orig_w
+            cy = (y + h / 2) / orig_h
+            nw = w / orig_w
+            nh = h / orig_h
             
             boxes.append([cx, cy, nw, nh])
             labels.append(obj['category_id'] - 1) 
@@ -104,17 +103,17 @@ class RTDETRv2_R50_System(nn.Module):
         return self.model(pixel_values=images, labels=labels)
 
 # ==========================================
-# 4. TRAINING & VALIDATION LOGIC
+# 4. TRAINING & EVALUATION LOGIC
 # ==========================================
 def train_one_epoch(model, loader, optimizer, scaler, device):
     model.train()
     total_loss = 0
     progress_bar = tqdm(loader, desc="Training")
     
-    # Perhatikan ada _, _ untuk menampung id dan size yang tidak dipakai saat training
-    for images, targets, _, _ in progress_bar:
+    for images, targets, _, orig_sizes in progress_bar:
         images = images.to(device)
-        formatted_targets = prepare_targets_for_detr(targets, device, IMG_SIZE)
+        
+        formatted_targets = prepare_targets_for_detr(targets, orig_sizes, device)
         
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
@@ -130,9 +129,6 @@ def train_one_epoch(model, loader, optimizer, scaler, device):
     return total_loss / len(loader)
 
 def validate_and_evaluate(model, loader, device, val_json_path):
-    """
-    Fungsi ini menghitung Val Loss DAN menghitung mAP layaknya CodaBench.
-    """
     model.eval()
     total_loss = 0
     predictions = []
@@ -141,14 +137,13 @@ def validate_and_evaluate(model, loader, device, val_json_path):
     with torch.no_grad():
         for images, targets, image_ids, orig_sizes in progress_bar:
             images = images.to(device)
-            formatted_targets = prepare_targets_for_detr(targets, device, IMG_SIZE)
+            formatted_targets = prepare_targets_for_detr(targets, orig_sizes, device)
             
             with torch.amp.autocast('cuda'):
                 outputs = model(images, labels=formatted_targets)
                 loss = outputs.loss
                 total_loss += loss.item()
             
-            # --- EKSTRAKSI UNTUK mAP ---
             logits = outputs.logits
             boxes = outputs.pred_boxes
             probs = logits.sigmoid()
@@ -158,7 +153,7 @@ def validate_and_evaluate(model, loader, device, val_json_path):
                 orig_w, orig_h = orig_sizes[i]
                 
                 scores, labels = probs[i].max(dim=-1)
-                keep = scores > 0.01 # Gunakan threshold rendah agar mAP akurat
+                keep = scores > 0.01 
                 
                 f_boxes = boxes[i][keep]
                 f_scores = scores[keep]
@@ -173,7 +168,7 @@ def validate_and_evaluate(model, loader, device, val_json_path):
                     
                     predictions.append({
                         "image_id": img_id,
-                        "category_id": int(label.item()) + 1, # Kembali ke 1-10
+                        "category_id": int(label.item()) + 1, 
                         "bbox": [round(x_min, 2), round(y_min, 2), round(w, 2), round(h, 2)],
                         "score": round(score.item(), 4)
                     })
@@ -181,26 +176,27 @@ def validate_and_evaluate(model, loader, device, val_json_path):
     val_loss = total_loss / len(loader)
     map_50_95, map_50, map_75 = 0.0, 0.0, 0.0
 
-    # --- HITUNG mAP MENGGUNAKAN PYCOCOTOOLS ---
     if len(predictions) > 0:
         tmp_json = "tmp_val_preds.json"
         with open(tmp_json, 'w') as f:
             json.dump(predictions, f)
             
         coco_gt = COCO(val_json_path)
-        coco_dt = coco_gt.loadRes(tmp_json)
+        # Menekan pesan print bawaan COCO agar terminal lebih rapi
+        from contextlib import redirect_stdout
+        import io
+        with redirect_stdout(io.StringIO()):
+            coco_dt = coco_gt.loadRes(tmp_json)
+            coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
         
-        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
+        map_50_95 = coco_eval.stats[0] 
+        map_50 = coco_eval.stats[1]    
+        map_75 = coco_eval.stats[2]    
         
-        # Ambil metrik dari stats array COCOeval
-        map_50_95 = coco_eval.stats[0] # Average Precision  (AP) @[ IoU=0.50:0.95 ]
-        map_50 = coco_eval.stats[1]    # Average Precision  (AP) @[ IoU=0.50      ]
-        map_75 = coco_eval.stats[2]    # Average Precision  (AP) @[ IoU=0.75      ]
-        
-        os.remove(tmp_json) # Bersihkan file sementara
+        os.remove(tmp_json) 
         
     return val_loss, map_50_95, map_50, map_75
 
@@ -220,40 +216,36 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     scaler = torch.amp.GradScaler('cuda')
     
-    best_map = 0.0 # Sekarang patokan terbaik adalah mAP, bukan Loss
+    best_map = 0.0 
 
     epoch = 0
     while epoch < EPOCHS:
         try:
             print(f"\n--- Epoch {epoch+1}/{EPOCHS} (Batch Size: {INITIAL_BATCH_SIZE}) ---")
             
-            # Gunakan CustomCocoDetection
             train_dataset = CustomCocoDetection(root=DATA_ROOT_TRAIN, annFile=ANN_FILE_TRAIN, transform=transform)
             train_loader = DataLoader(train_dataset, batch_size=INITIAL_BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
 
             val_dataset = CustomCocoDetection(root=DATA_ROOT_VAL, annFile=ANN_FILE_VAL, transform=transform)
             val_loader = DataLoader(val_dataset, batch_size=INITIAL_BATCH_SIZE, shuffle=False, collate_fn=collate_fn, num_workers=8)
 
-            # 1. Training
             train_loss = train_one_epoch(model, train_loader, optimizer, scaler, DEVICE)
             
-            # 2. Validation & mAP
             val_loss, map_50_95, map_50, map_75 = validate_and_evaluate(model, val_loader, DEVICE, ANN_FILE_VAL)
 
             print(f"📈 T_Loss: {train_loss:.4f} | V_Loss: {val_loss:.4f} | mAP_50-95: {map_50_95:.4f} | mAP_50: {map_50:.4f}")
 
-            # 3. Simpan Log ke CSV
+            # Simpan Log ke CSV
             with open(LOG_FILE, mode='a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([epoch+1, train_loss, val_loss, map_50_95, map_50, map_75])
 
-            # 4. Simpan Model Terbaik berdasarkan mAP
+            # Simpan Model Terbaik berdasarkan mAP
             if map_50_95 > best_map:
                 best_map = map_50_95
                 torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/rtdetr_r50_best.pth")
                 print(f"⭐ Best Model Saved! (New Highest mAP: {best_map:.4f})")
                 
-            # Simpan juga model last epoch buat jaga-jaga
             torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/rtdetr_r50_last.pth")
 
             epoch += 1 

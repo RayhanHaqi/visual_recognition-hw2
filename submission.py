@@ -1,5 +1,6 @@
 import os
 import json
+import zipfile
 import torch
 import torch.nn as nn
 from PIL import Image
@@ -10,14 +11,20 @@ from tqdm import tqdm
 # ==========================================
 # 1. KONFIGURASI
 # ==========================================
-TEST_IMG_DIR = "./datasets/test"           # Path ke folder gambar test
+TEST_IMG_DIR = "./datasets/test"           
 CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_best.pth"
-OUTPUT_JSON = "pred.json"                  
+
+# Direktori Output Baru
+SUBMISSION_DIR = "./submission"
+os.makedirs(SUBMISSION_DIR, exist_ok=True)
 
 IMG_SIZE = 640
 NUM_CLASSES = 10
 CONF_THRESHOLD = 0.05                      
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Ekstrak nama model dari CHECKPOINT_PATH (misal: "rtdetr_r50_best")
+MODEL_NAME = os.path.splitext(os.path.basename(CHECKPOINT_PATH))[0]
 
 # ==========================================
 # 2. DEFINISI MODEL
@@ -38,7 +45,7 @@ class RTDETRv2_R50_System(nn.Module):
 # 3. FUNGSI UTAMA INFERENCE
 # ==========================================
 def main():
-    print(f"🚀 Memulai Inference langsung dari folder gambar menggunakan {DEVICE}...")
+    print(f"🚀 Memulai Inference menggunakan {DEVICE}...")
 
     # 1. Inisialisasi Model & Load Best Weights
     model = RTDETRv2_R50_System(num_classes=NUM_CLASSES).to(DEVICE)
@@ -54,8 +61,6 @@ def main():
     ])
 
     predictions = []
-    
-    # Ambil semua file gambar dari folder test
     image_files = [f for f in os.listdir(TEST_IMG_DIR) if f.endswith(('.jpg', '.png', '.jpeg'))]
     print(f"📁 Ditemukan {len(image_files)} gambar untuk diprediksi.")
 
@@ -64,37 +69,28 @@ def main():
         for file_name in tqdm(image_files, desc="Processing Test Images"):
             img_path = os.path.join(TEST_IMG_DIR, file_name)
             
-            # --- MENDAPATKAN IMAGE ID DARI NAMA FILE ---
-            # Sistem evaluasi COCO biasanya mengharuskan image_id berupa integer (angka).
-            # Kita pecah "123.jpg" menjadi angka 123.
+            # Ambil Image ID
             try:
                 image_id = int(os.path.splitext(file_name)[0])
             except ValueError:
-                # Jika nama filenya bukan angka (misal "test_A.jpg"), kita pakai stringnya saja.
                 image_id = file_name 
 
-            # --- MENDAPATKAN RESOLUSI ASLI ---
-            # Buka gambar dan langsung catat ukuran aslinya untuk un-normalize bounding box nanti
+            # Ambil Resolusi Asli
             image = Image.open(img_path).convert("RGB")
             orig_w, orig_h = image.size 
             
-            # Siapkan tensor untuk model
             input_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
-            # Prediksi dengan model
             with torch.amp.autocast('cuda'):
                 outputs = model(input_tensor)
             
             logits = outputs.logits[0]  
             boxes = outputs.pred_boxes[0] 
 
-            # Hitung Probabilitas
             probs = logits.sigmoid()
             scores, labels = probs.max(dim=-1)
 
-            # Filter prediksi yang skornya melebihi threshold (0.05)
             keep = scores > CONF_THRESHOLD
-            
             filtered_boxes = boxes[keep]
             filtered_scores = scores[keep]
             filtered_labels = labels[keep]
@@ -103,14 +99,11 @@ def main():
             for box, score, label in zip(filtered_boxes, filtered_scores, filtered_labels):
                 cx, cy, norm_w, norm_h = box.tolist()
                 
-                # Un-normalize & Ubah ke format COCO [x_min, y_min, w, h]
-                # Kita gunakan orig_w dan orig_h yang didapat dari PIL tadi
                 w = norm_w * orig_w
                 h = norm_h * orig_h
                 x_min = (cx * orig_w) - (w / 2)
                 y_min = (cy * orig_h) - (h / 2)
 
-                # Format prediksi untuk 1 objek
                 pred_dict = {
                     "image_id": image_id,
                     "category_id": int(label.item()) + 1,  # KEMBALIKAN KE 1-10
@@ -119,12 +112,27 @@ def main():
                 }
                 predictions.append(pred_dict)
 
-    # 5. Simpan ke pred.json
-    print(f"\n💾 Menyimpan total {len(predictions)} objek terdeteksi ke {OUTPUT_JSON}...")
-    with open(OUTPUT_JSON, 'w') as f:
+    # ==========================================
+    # 4. PENYIMPANAN & ZIPPING (FITUR BARU)
+    # ==========================================
+    json_path = os.path.join(SUBMISSION_DIR, "pred.json")
+    zip_path = os.path.join(SUBMISSION_DIR, f"{MODEL_NAME}.zip")
+
+    # Simpan ke pred.json sementara di dalam folder submission
+    print(f"\n💾 Menyimpan JSON sementara...")
+    with open(json_path, 'w') as f:
         json.dump(predictions, f)
 
-    print("✅ Selesai! File pred.json sudah siap disubmit.")
+    # Bungkus pred.json ke dalam file .zip
+    print(f"🗜️ Melakukan zipping file menjadi: {zip_path}...")
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # arcname="pred.json" memastikan struktur folder tidak ikut masuk ke dalam zip
+        zipf.write(json_path, arcname="pred.json")
+
+    # (Opsional) Hapus file pred.json mentah jika kamu hanya butuh file zip-nya
+    os.remove(json_path) 
+
+    print("✅ Selesai! File zip kamu sudah siap di folder ./submission untuk diunggah ke CodaBench.")
 
 if __name__ == "__main__":
     main()
