@@ -12,7 +12,7 @@ from tqdm import tqdm
 # 1. KONFIGURASI
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
-CHECKPOINT_PATH = "./checkpoints/train-aug-scheduler_best.pth"
+CHECKPOINT_PATH = "./checkpoints/train-no_aug-multiscale-scheduler_best.pth"
 
 # Direktori Output Baru
 SUBMISSION_DIR = "./submission"
