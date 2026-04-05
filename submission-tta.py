@@ -14,7 +14,7 @@ from torchvision.ops import nms
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
 # PASTIKAN INI ADALAH BOBOT BASELINE PERTAMA KAMU YANG DAPAT SKOR 0.38
-CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_best.pth" 
+CHECKPOINT_PATH = "./checkpoints/train-no_aug-multiscale-scheduler_best.pth" 
 
 SUBMISSION_DIR = "./submission"
 os.makedirs(SUBMISSION_DIR, exist_ok=True)
@@ -24,7 +24,7 @@ CONF_THRESHOLD = 0.05
 # MULTI-SCALE TTA (Test Time Augmentation)
 SCALES = [480, 640, 800] 
 
-DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 MODEL_NAME = os.path.splitext(os.path.basename(CHECKPOINT_PATH))[0] + "_TTA"
 
 # ==========================================
