@@ -24,7 +24,7 @@ CONF_THRESHOLD = 0.05
 # MULTI-SCALE TTA (Test Time Augmentation)
 SCALES = [480, 640, 800] 
 
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 MODEL_NAME = os.path.splitext(os.path.basename(CHECKPOINT_PATH))[0] + "_TTA"
 
 # ==========================================
