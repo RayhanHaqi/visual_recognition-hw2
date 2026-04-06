@@ -1,25 +1,32 @@
-(selectedtopics_env) ai@w61:~/Rayhan/selectedtopics/HW2$ python submission.py && git add -A && git commit -m '.' && git push
-🚀 Memulai Inference menggunakan cuda:1...
-You passed `num_labels=10` which is incompatible to the `id2label` map of length `80`.
-Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 764/764 [00:00<00:00, 13140.42it/s]
-RTDetrForObjectDetection LOAD REPORT from: PekingU/rtdetr_r50vd
-Key                                                 | Status   |                                                                                         
-----------------------------------------------------+----------+-----------------------------------------------------------------------------------------
-model.decoder.class_embed.{0, 1, 2, 3, 4, 5}.bias   | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([80]) vs model:torch.Size([10])          
-model.denoising_class_embed.weight                  | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([81, 256]) vs model:torch.Size([11, 256])
-model.decoder.class_embed.{0, 1, 2, 3, 4, 5}.weight | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([80, 256]) vs model:torch.Size([10, 256])
-model.enc_score_head.weight                         | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([80, 256]) vs model:torch.Size([10, 256])
-model.enc_score_head.bias                           | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([80]) vs model:torch.Size([10])          
+🔔 [MODEL V1] MEMASUKI BABAK 2: Augmentasi Dimatikan (Clean Fine-Tuning)!
 
-Notes:
-- MISMATCH:	ckpt weights were loaded, but they did not match the original empty weight shapes.
-📥 Loading weights dari: ./checkpoints/rtdetr_v2_r50_best.pth
+--- Model: V1 | Epoch 16/20 [Stage 2 (Clean)] (Batch: 24) ---
+Training:   0%|                                                                                                                                                | 0/1253 [00:00<?, ?it/s]
 Traceback (most recent call last):
-  File "/home/ai/Rayhan/selectedtopics/HW2/submission.py", line 138, in <module>
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-paper-implementation.py", line 295, in <module>
     main()
-  File "/home/ai/Rayhan/selectedtopics/HW2/submission.py", line 53, in main
-    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
-  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2638, in load_state_dict
-    raise RuntimeError(
-RuntimeError: Error(s) in loading state_dict for RTDETRv2_R50_System:
-	Unexpected key(s) in state_dict: "model.class_embed.0.weight", "model.class_embed.0.bias", "model.class_embed.1.weight", "model.class_embed.1.bias", "model.class_embed.2.weight", "model.class_embed.2.bias", "model.class_embed.3.weight", "model.class_embed.3.bias", "model.class_embed.4.weight", "model.class_embed.4.bias", "model.class_embed.5.weight", "model.class_embed.5.bias", "model.bbox_embed.0.layers.0.weight", "model.bbox_embed.0.layers.0.bias", "model.bbox_embed.0.layers.1.weight", "model.bbox_embed.0.layers.1.bias", "model.bbox_embed.0.layers.2.weight", "model.bbox_embed.0.layers.2.bias", "model.bbox_embed.1.layers.0.weight", "model.bbox_embed.1.layers.0.bias", "model.bbox_embed.1.layers.1.weight", "model.bbox_embed.1.layers.1.bias", "model.bbox_embed.1.layers.2.weight", "model.bbox_embed.1.layers.2.bias", "model.bbox_embed.2.layers.0.weight", "model.bbox_embed.2.layers.0.bias", "model.bbox_embed.2.layers.1.weight", "model.bbox_embed.2.layers.1.bias", "model.bbox_embed.2.layers.2.weight", "model.bbox_embed.2.layers.2.bias", "model.bbox_embed.3.layers.0.weight", "model.bbox_embed.3.layers.0.bias", "model.bbox_embed.3.layers.1.weight", "model.bbox_embed.3.layers.1.bias", "model.bbox_embed.3.layers.2.weight", "model.bbox_embed.3.layers.2.bias", "model.bbox_embed.4.layers.0.weight", "model.bbox_embed.4.layers.0.bias", "model.bbox_embed.4.layers.1.weight", "model.bbox_embed.4.layers.1.bias", "model.bbox_embed.4.layers.2.weight", "model.bbox_embed.4.layers.2.bias", "model.bbox_embed.5.layers.0.weight", "model.bbox_embed.5.layers.0.bias", "model.bbox_embed.5.layers.1.weight", "model.bbox_embed.5.layers.1.bias", "model.bbox_embed.5.layers.2.weight", "model.bbox_embed.5.layers.2.bias", "model.model.decoder.layers.0.encoder_attn.n_points_scale", "model.model.decoder.layers.1.encoder_attn.n_points_scale", "model.model.decoder.layers.2.encoder_attn.n_points_scale", "model.model.decoder.layers.3.encoder_attn.n_points_scale", "model.model.decoder.layers.4.encoder_attn.n_points_scale", "model.model.decoder.layers.5.encoder_attn.n_points_scale". 
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-paper-implementation.py", line 241, in main
+    train_loss = train_one_epoch(model, ema_model, train_loader, optimizer, scaler, scheduler, DEVICE)
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-paper-implementation.py", line 114, in train_one_epoch
+    for images, targets, _, orig_sizes in progress_bar:
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 720, in __next__
+    data = self._next_data()
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1527, in _next_data
+    return self._process_data(data, worker_id)
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1565, in _process_data
+    data.reraise()
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/_utils.py", line 774, in reraise
+    raise exception
+TypeError: Caught TypeError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/worker.py", line 374, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 54, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/ai/miniconda3/envs/selectedtopics_env/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 54, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/ai/Rayhan/selectedtopics/HW2/train-paper-implementation.py", line 50, in __getitem__
+    image, target = self.transforms(image, target)
+TypeError: Compose.__call__() takes 2 positional arguments but 3 were given
