@@ -231,7 +231,9 @@ def main():
                 # Pindah ke Babak 2
                 if epoch == STAGE_2_START_EPOCH:
                     print(f"\n🔔 [MODEL {version.upper()}] MEMASUKI BABAK 2: Augmentasi Dimatikan (Clean Fine-Tuning)!")
-                    train_dataset.transforms = transform_clean 
+                    # RE-INISIALISASI DATASET & LOADER AGAR PYTORCH MEMBUNGKUSNYA DENGAN BENAR
+                    train_dataset = CustomCocoDetection(root=DATA_ROOT_TRAIN, annFile=ANN_FILE_TRAIN, transform=transform_clean)
+                    train_loader = DataLoader(train_dataset, batch_size=current_batch_size, shuffle=True, collate_fn=collate_fn, num_workers=8)
                 
                 if epoch >= STAGE_2_START_EPOCH:
                     current_stage = "Stage 2 (Clean)"
