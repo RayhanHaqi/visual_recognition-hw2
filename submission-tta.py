@@ -14,7 +14,7 @@ from torchvision.ops import nms
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
 # PASTIKAN INI ADALAH BOBOT BASELINE PERTAMA KAMU YANG DAPAT SKOR 0.38
-CHECKPOINT_PATH = "./checkpoints/train-no_aug-multiscale-scheduler_best.pth" 
+CHECKPOINT_PATH = "./checkpoints/rtdetr_r50_best.pth" 
 
 SUBMISSION_DIR = "./submission"
 os.makedirs(SUBMISSION_DIR, exist_ok=True)
