@@ -207,7 +207,7 @@ def main():
 
         # Inisialisasi Model & EMA Baru
         model = PaperDETR_System(version=version, num_classes=NUM_CLASSES).to(DEVICE)
-        ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
+        ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.99))
         
         optimizer = torch.optim.AdamW(model.parameters(), lr=MAX_LR, weight_decay=1e-4)
         scaler = torch.amp.GradScaler('cuda')
