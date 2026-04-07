@@ -31,11 +31,26 @@ val_transform = transforms.Compose([
 
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
-        img, target = self._load_image(self.ids[index]), self._load_target(self.ids[index])
-        if self.transforms: img, target = self.transforms(img, target)
-        return img, target, self.ids[index], img.size
+        id = self.ids[index]
+        image = self._load_image(id)
+        target = self._load_target(id)
+        
+        # ⚠️ KEMBALI KE CARA LAMA YANG AMAN
+        orig_w, orig_h = image.size 
+        
+        if self.transforms is not None:
+            image, target = self.transforms(image, target)
+            
+        # ⚠️ KEMBALI MENGEMBALIKAN 5 ELEMEN
+        return image, target, id, orig_w, orig_h
 
-def collate_fn(batch): return torch.stack([i[0] for i in batch]), [i[1] for i in batch], [i[2] for i in batch], [(i[3][0], i[3][1]) for i in batch]
+def collate_fn(batch):
+    # ⚠️ KEMBALI KE CARA LAMA YANG AMAN
+    images = torch.stack([item[0] for item in batch], dim=0)
+    targets = [item[1] for item in batch]
+    image_ids = [item[2] for item in batch]
+    orig_sizes = [(item[3], item[4]) for item in batch]
+    return images, targets, image_ids, orig_sizes
 
 def prepare_targets(targets, sizes, dev):
     res = []
