@@ -29,8 +29,8 @@ LOG_DIR = "./logs"
 NUM_CLASSES = 10                     
 INITIAL_BATCH_SIZE = 32               
 MAX_LR = 1e-4 
-EPOCHS = 20
-STAGE_2_START_EPOCH = 15 # Babak 2 (Tanpa Augmentasi) dimulai di Epoch 16
+EPOCHS = 10
+STAGE_2_START_EPOCH = 8 # Babak 2 (Tanpa Augmentasi) dimulai di Epoch 16
 IMG_SIZE = 640                       
 DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
