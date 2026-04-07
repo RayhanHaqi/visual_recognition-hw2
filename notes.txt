@@ -19,3 +19,5 @@ Eksperimen 5: Penyesuaian Bobot Loss (Loss Re-weighting)
 Eksperimen 6: Test Time Augmentation (TTA)
 
 Eksperimen 7: Model Ensembling
+
+SSH ai@140.113.149.93
