@@ -2,137 +2,129 @@ import os
 import json
 import zipfile
 import torch
+import argparse
 import torch.nn as nn
 from PIL import Image
 from torchvision import transforms
-from transformers import RTDetrForObjectDetection
+from transformers import RTDetrForObjectDetection, RTDetrConfig, RTDetrV2ForObjectDetection, RTDetrV2Config
 from tqdm import tqdm
 
 # ==========================================
 # 1. KONFIGURASI
 # ==========================================
 TEST_IMG_DIR = "./datasets/test"           
-CHECKPOINT_PATH = "./checkpoints/dptext_v1_best.pth"
-
-# Direktori Output Baru
 SUBMISSION_DIR = "./submission"
 os.makedirs(SUBMISSION_DIR, exist_ok=True)
-
-IMG_SIZE = 640
-NUM_CLASSES = 10
-CONF_THRESHOLD = 0.05                      
 DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
-# Ekstrak nama model dari CHECKPOINT_PATH (misal: "rtdetr_r50_best")
-MODEL_NAME = os.path.splitext(os.path.basename(CHECKPOINT_PATH))[0]
+# ==========================================
+# 2. FUNGSI SMART LOADER
+# ==========================================
+def load_smart_model(ckpt_path):
+    name = os.path.basename(ckpt_path).lower()
+    
+    # Deteksi Queries
+    q = 1500 if "tcocr" in name else 1000 if "dptext" in name else 300
+    
+    # Deteksi Arsitektur Base
+    cfg_base = "PekingU/rtdetr_r50vd" if "v1" in name else "PekingU/rtdetr_v2_r50vd"
+    
+    if "v1" in name:
+        cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=10)
+        cfg.num_queries = q
+        model = RTDetrForObjectDetection.from_pretrained(cfg_base, config=cfg, ignore_mismatched_sizes=True)
+    else:
+        cfg = RTDetrV2Config.from_pretrained(cfg_base, num_labels=10)
+        cfg.num_queries = q
+        model = RTDetrV2ForObjectDetection.from_pretrained(cfg_base, config=cfg, ignore_mismatched_sizes=True)
+    
+    print(f"✅ Memuat: {name} | Arsitektur: {'V1' if 'v1' in name else 'V2'} | Queries: {q}")
+    
+    # ==========================================
+    # ⚠️ PERBAIKAN: MENCUKUR PREFIX "model."
+    # ==========================================
+    state_dict = torch.load(ckpt_path, map_location=DEVICE)
+    cleaned_state_dict = {}
+    
+    for key, value in state_dict.items():
+        # Jika kunci berawalan "model.", potong 6 karakter pertamanya
+        if key.startswith('model.'):
+            cleaned_key = key[6:] 
+            cleaned_state_dict[cleaned_key] = value
+        else:
+            cleaned_state_dict[key] = value
+            
+    # Load state dict yang sudah bersih
+    model.load_state_dict(cleaned_state_dict)
+    # ==========================================
+    
+    return model.to(DEVICE).eval()
 
 # ==========================================
-# 2. DEFINISI MODEL
-# ==========================================
-class RTDETRv2_R50_System(nn.Module):
-    def __init__(self, num_classes=10):
-        super(RTDETRv2_R50_System, self).__init__()
-        self.model = RTDetrForObjectDetection.from_pretrained(
-            "PekingU/rtdetr_r50vd",
-            num_labels=num_classes,
-            ignore_mismatched_sizes=True
-        )
-
-    def forward(self, images):
-        return self.model(pixel_values=images)
-
-# ==========================================
-# 3. FUNGSI UTAMA INFERENCE
+# 3. FUNGSI UTAMA (INFERENCE)
 # ==========================================
 def main():
-    print(f"🚀 Memulai Inference menggunakan {DEVICE}...")
+    parser = argparse.ArgumentParser(description="Default Standard Submission")
+    parser.add_argument("ckpt", type=str, help="Path ke file checkpoint (.pth)")
+    args = parser.parse_args()
 
-    # 1. Inisialisasi Model & Load Best Weights
-    model = RTDETRv2_R50_System(num_classes=NUM_CLASSES).to(DEVICE)
-    print(f"📥 Loading weights dari: {CHECKPOINT_PATH}")
-    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
-    model.eval()
-
-    # 2. Transformasi Input
-    transform = transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    # Muat model secara otomatis
+    model = load_smart_model(args.ckpt)
+    MODEL_NAME = os.path.splitext(os.path.basename(args.ckpt))[0]
+    
+    predictions = []
+    
+    trans = transforms.Compose([
+        transforms.Resize((640, 640)), 
+        transforms.ToTensor(), 
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    predictions = []
-    image_files = [f for f in os.listdir(TEST_IMG_DIR) if f.endswith(('.jpg', '.png', '.jpeg'))]
-    print(f"📁 Ditemukan {len(image_files)} gambar untuk diprediksi.")
+    for img_name in tqdm(os.listdir(TEST_IMG_DIR)):
+        img_id = int(os.path.splitext(img_name)[0])
+        img_path = os.path.join(TEST_IMG_DIR, img_name)
+        pil_img = Image.open(img_path).convert("RGB")
+        orig_w, orig_h = pil_img.size
 
-    # 3. Loop Inference
-    with torch.no_grad():
-        for file_name in tqdm(image_files, desc="Processing Test Images"):
-            img_path = os.path.join(TEST_IMG_DIR, file_name)
+        with torch.no_grad():
+            tensor = trans(pil_img).unsqueeze(0).to(DEVICE)
+            out = model(tensor)
             
-            # Ambil Image ID
-            try:
-                image_id = int(os.path.splitext(file_name)[0])
-            except ValueError:
-                image_id = file_name 
-
-            # Ambil Resolusi Asli
-            image = Image.open(img_path).convert("RGB")
-            orig_w, orig_h = image.size 
-            
-            input_tensor = transform(image).unsqueeze(0).to(DEVICE)
-
-            with torch.amp.autocast('cuda'):
-                outputs = model(input_tensor)
-            
-            logits = outputs.logits[0]  
-            boxes = outputs.pred_boxes[0] 
-
-            probs = logits.sigmoid()
+            probs = out.logits.sigmoid()[0]
             scores, labels = probs.max(dim=-1)
+            
+            # Threshold Default
+            mask = scores > 0.05
 
-            keep = scores > CONF_THRESHOLD
-            filtered_boxes = boxes[keep]
-            filtered_scores = scores[keep]
-            filtered_labels = labels[keep]
-
-            # 4. Konversi BBox & Simpan ke List
-            for box, score, label in zip(filtered_boxes, filtered_scores, filtered_labels):
-                cx, cy, norm_w, norm_h = box.tolist()
-                
-                w = norm_w * orig_w
-                h = norm_h * orig_h
+            for box, score, label in zip(out.pred_boxes[0][mask], scores[mask], labels[mask]):
+                cx, cy, nw, nh = box.tolist()
+                w = nw * orig_w
+                h = nh * orig_h
                 x_min = (cx * orig_w) - (w / 2)
                 y_min = (cy * orig_h) - (h / 2)
 
-                pred_dict = {
-                    "image_id": image_id,
-                    "category_id": int(label.item()) + 1,  # KEMBALIKAN KE 1-10
+                predictions.append({
+                    "image_id": img_id,
+                    "category_id": int(label.item()) + 1,  # Dikembalikan ke format 1-10
                     "bbox": [round(x_min, 2), round(y_min, 2), round(w, 2), round(h, 2)],
                     "score": round(score.item(), 4)
-                }
-                predictions.append(pred_dict)
+                })
 
     # ==========================================
-    # 4. PENYIMPANAN & ZIPPING (FITUR BARU)
+    # 4. PENYIMPANAN & ZIPPING
     # ==========================================
     json_path = os.path.join(SUBMISSION_DIR, "pred.json")
-    zip_path = os.path.join(SUBMISSION_DIR, f"{MODEL_NAME}.zip")
+    zip_path = os.path.join(SUBMISSION_DIR, f"default_{MODEL_NAME}.zip")
 
-    # Simpan ke pred.json sementara di dalam folder submission
     print(f"\n💾 Menyimpan JSON sementara...")
     with open(json_path, 'w') as f:
         json.dump(predictions, f)
 
-    # Bungkus pred.json ke dalam file .zip
     print(f"🗜️ Melakukan zipping file menjadi: {zip_path}...")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # arcname="pred.json" memastikan struktur folder tidak ikut masuk ke dalam zip
-        zipf.write(json_path, arcname="pred.json")
+        zipf.write(json_path, "pred.json")
+        
+    print(f"🎉 Selesai! File submission default siap digunakan.")
 
-    # (Opsional) Hapus file pred.json mentah jika kamu hanya butuh file zip-nya
-    os.remove(json_path) 
-
-    print("✅ Selesai! File zip kamu sudah siap di folder ./submission untuk diunggah ke CodaBench.")
-
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()

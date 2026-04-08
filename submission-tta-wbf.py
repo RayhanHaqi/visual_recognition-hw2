@@ -2,6 +2,7 @@ import os, json, zipfile, torch, argparse
 from PIL import Image
 from torchvision import transforms
 from transformers import RTDetrForObjectDetection, RTDetrConfig, RTDetrV2ForObjectDetection, RTDetrV2Config
+from ensemble_boxes import weighted_boxes_fusion
 from tqdm import tqdm
 
 TEST_IMG_DIR = "./datasets/test"
@@ -24,7 +25,7 @@ def load_smart_model(ckpt_path):
     return model.to(DEVICE).eval()
 
 def main():
-    parser = argparse.ArgumentParser(description="TTA Only Submission")
+    parser = argparse.ArgumentParser(description="TTA + WBF Submission")
     # ⚠️ Menggunakan Positional Argument (tanpa --)
     parser.add_argument("ckpt", type=str, help="Path ke file checkpoint (.pth)")
     args = parser.parse_args()
@@ -35,31 +36,30 @@ def main():
     predictions = []
 
     for img_name in tqdm(os.listdir(TEST_IMG_DIR)):
-        img_id = int(os.path.splitext(img_name)[0])
-        pil_img = Image.open(os.path.join(TEST_IMG_DIR, img_name)).convert("RGB")
-        w_orig, h_orig = pil_img.size
+        img_pil = Image.open(os.path.join(TEST_IMG_DIR, img_name)).convert("RGB")
+        w_orig, h_orig = img_pil.size
+        boxes_list, scores_list, labels_list = [], [], []
 
         with torch.no_grad():
             for size in scales:
-                tensor = transforms.Compose([
-                    transforms.Resize((size, size)), transforms.ToTensor(),
-                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-                ])(pil_img).unsqueeze(0).to(DEVICE)
-                
-                out = model(tensor)
-                probs = out.logits.sigmoid()[0]; s, l = probs.max(dim=-1); mask = s > 0.05
-                
-                for box, score, label in zip(out.pred_boxes[0][mask], s[mask], l[mask]):
-                    cx, cy, nw, nh = box.tolist()
-                    predictions.append({
-                        "image_id": img_id, "category_id": int(label.item()) + 1,
-                        "bbox": [round((cx*w_orig)-(nw*w_orig)/2, 2), round((cy*h_orig)-(nh*h_orig)/2, 2), round(nw*w_orig, 2), round(nh*h_orig, 2)],
-                        "score": round(score.item(), 4)
-                    })
+                t = transforms.Compose([transforms.Resize((size, size)), transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])(img_pil).unsqueeze(0).to(DEVICE)
+                out = model(t)
+                probs = out.logits.sigmoid()[0]; s, l = probs.max(dim=-1); mask = s > 0.01
+                b_norm = [[max(0,b[0]-b[2]/2), max(0,b[1]-b[3]/2), min(1,b[0]+b[2]/2), min(1,b[1]+b[3]/2)] for b in out.pred_boxes[0][mask].tolist()]
+                boxes_list.append(b_norm); scores_list.append(s[mask].tolist()); labels_list.append(l[mask].tolist())
+
+        f_b, f_s, f_l = weighted_boxes_fusion(boxes_list, scores_list, labels_list, weights=[1, 1.2], iou_thr=0.5, skip_box_thr=0.05)
+
+        for b, score, label in zip(f_b, f_s, f_l):
+            predictions.append({
+                "image_id": int(os.path.splitext(img_name)[0]), "category_id": int(label) + 1,
+                "bbox": [round(b[0]*w_orig, 2), round(b[1]*h_orig, 2), round((b[2]-b[0])*w_orig, 2), round((b[3]-b[1])*h_orig, 2)],
+                "score": round(float(score), 4)
+            })
 
     with open("pred.json", 'w') as f: json.dump(predictions, f)
-    zip_name = f"tta_{model_name}.zip"
-    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as z: z.write("pred.json")
-    print(f"🎉 Selesai! File tersimpan sebagai: {zip_name}")
+    zip_out = f"tta_wbf_{model_name}.zip"
+    with zipfile.ZipFile(zip_out, 'w', zipfile.ZIP_DEFLATED) as z: z.write("pred.json")
+    print(f"🎉 Selesai! File tersimpan sebagai: {zip_out}")
 
 if __name__ == "__main__": main()
