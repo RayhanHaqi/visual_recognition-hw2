@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 DATA_ROOT_TRAIN, ANN_FILE_TRAIN = "./datasets/train", "./datasets/train.json"
 DATA_ROOT_VAL, ANN_FILE_VAL = "./datasets/valid", "./datasets/valid.json"
 CHECKPOINT_DIR, LOG_DIR = "./checkpoints", "./logs"
-NUM_CLASSES, INITIAL_BATCH_SIZE, MAX_LR, EPOCHS, IMG_SIZE = 10, 32, 1e-4, 20, 640
+NUM_CLASSES, INITIAL_BATCH_SIZE, MAX_LR, EPOCHS, IMG_SIZE = 10, 32, 5e-5, 20, 640
 DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -95,7 +95,7 @@ def train_one_epoch(model, ema_model, loader, optimizer, scaler, scheduler, devi
         total_loss += loss.item(); pb.set_postfix({"loss": f"{loss.item():.4f}", "lr": f"{scheduler.get_last_lr()[0]:.6f}"})
     return total_loss / len(loader)
 
-# ⚠️ FUNGSI EVALUATE DIPERBARUI UNTUK METRIK LENGKAP & 1000 QUERIES
+# ⚠️ FUNGSI EVALUATE YANG SUDAH DIPERBAIKI (BEBAS BUG PYCOCOTOOLS)
 def evaluate(model, loader, device, val_json, v):
     model.eval(); preds = []; pb = tqdm(loader, desc="Val EMA")
     with torch.no_grad():
@@ -113,18 +113,28 @@ def evaluate(model, loader, device, val_json, v):
     import io; from contextlib import redirect_stdout
     with redirect_stdout(io.StringIO()):
         coco_eval = COCOeval(COCO(val_json), COCO(val_json).loadRes(f"tmp_dptext_{v}.json"), 'bbox')
-        # ⚠️ WAJIB: Batas evaluasi diatur ke 1000 agar sesuai dengan jumlah query
-        coco_eval.params.maxDets = [1, 10, 1000] 
+        
+        # ⚠️ PERBAIKAN 1: Wajib memasukkan angka 100 agar pycocotools tidak error
+        max_queries = 1000  # Karena skrip ini DPText
+        coco_eval.params.maxDets = [1, 10, 100, max_queries] 
+        
         coco_eval.evaluate(); coco_eval.accumulate(); coco_eval.summarize()
     os.remove(f"tmp_dptext_{v}.json")
     
-    # Mengembalikan Dictionary Berisi Metrik Lengkap
+    # ⚠️ PERBAIKAN 2: Ekstraksi manual spesifik untuk batas max_queries kita
+    m_5095 = coco_eval._summarize(1, maxDets=max_queries)
+    m_50   = coco_eval._summarize(1, iouThr=.5, maxDets=max_queries)
+    m_75   = coco_eval._summarize(1, iouThr=.75, maxDets=max_queries)
+    m_S    = coco_eval._summarize(1, areaRng='small', maxDets=max_queries)
+    m_M    = coco_eval._summarize(1, areaRng='medium', maxDets=max_queries)
+
+    # ⚠️ PERBAIKAN 3: Filter nilai -1.0 menjadi 0 agar logic _best.pth berjalan
     metrics = {
-        "mAP_50_95": coco_eval.stats[0],
-        "mAP_50": coco_eval.stats[1],
-        "mAP_75": coco_eval.stats[2],
-        "mAP_S": coco_eval.stats[3],
-        "mAP_M": coco_eval.stats[4],
+        "mAP_50_95": m_5095 if m_5095 > -1 else 0,
+        "mAP_50": m_50 if m_50 > -1 else 0,
+        "mAP_75": m_75 if m_75 > -1 else 0,
+        "mAP_S": m_S if m_S > -1 else 0,
+        "mAP_M": m_M if m_M > -1 else 0,
     }
     return 0, metrics
 
