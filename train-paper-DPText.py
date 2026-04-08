@@ -81,7 +81,7 @@ class DPText_DETR(nn.Module):
         
         if version == "v1": self.model = RTDetrForObjectDetection.from_pretrained("PekingU/rtdetr_r50vd", config=config, ignore_mismatched_sizes=True)
         else: self.model = RTDetrV2ForObjectDetection.from_pretrained("PekingU/rtdetr_v2_r50vd", config=config, ignore_mismatched_sizes=True)
-    def forward(self, img, lbl=None): return self.model(pixel_values=img, labels=lbl)
+    def forward(self, img, labels=None): return self.model(pixel_values=img, labels=labels)
 
 # ================= TRAINING LOOP =================
 def train_one_epoch(model, ema_model, loader, optimizer, scaler, scheduler, device):
