@@ -90,12 +90,26 @@ def train_one_epoch(model, ema_model, loader, optimizer, scaler, scheduler, devi
         img = img.to(device); tgt = prepare_targets(tgt, sz, device)
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'): loss = model(img, labels=tgt).loss
-        scaler.scale(loss).backward(); scaler.unscale_(optimizer); torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
-        scaler.step(optimizer); scaler.update(); scheduler.step(); ema_model.update_parameters(model)
-        total_loss += loss.item(); pb.set_postfix({"loss": f"{loss.item():.4f}", "lr": f"{scheduler.get_last_lr()[0]:.6f}"})
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+        
+        # ⚠️ PERBAIKAN: Catat skala sebelum melangkah
+        scale_before = scaler.get_scale()
+        scaler.step(optimizer)
+        scaler.update()
+        
+        # ⚠️ PERBAIKAN: Hanya update Scheduler & EMA jika scaler tidak men-skip langkah ini
+        if scale_before == scaler.get_scale():
+            scheduler.step()
+            ema_model.update_parameters(model)
+            
+        total_loss += loss.item()
+        pb.set_postfix({"loss": f"{loss.item():.4f}", "lr": f"{scheduler.get_last_lr()[0]:.6f}"})
     return total_loss / len(loader)
 
 # ⚠️ FUNGSI EVALUATE YANG SUDAH DIPERBAIKI (BEBAS BUG PYCOCOTOOLS)
+# ⚠️ FUNGSI EVALUATE DENGAN NINJA HACK (BEBAS BUG PYCOCOTOOLS)
 def evaluate(model, loader, device, val_json, v):
     model.eval(); preds = []; pb = tqdm(loader, desc="Val EMA")
     with torch.no_grad():
@@ -109,32 +123,35 @@ def evaluate(model, loader, device, val_json, v):
                     preds.append({"image_id": ids[i], "category_id": int(l.item())+1, "bbox": [round(cx*sz[i][0]-w/2, 2), round(cy*sz[i][1]-h/2, 2), round(w, 2), round(h, 2)], "score": round(s.item(), 4)})
     if not preds: return 0, {"mAP_50_95":0, "mAP_50":0, "mAP_75":0, "mAP_S":0, "mAP_M":0}
     
-    with open(f"tmp_dptext_{v}.json", 'w') as f: json.dump(preds, f)
+    with open(f"tmp_{v}.json", 'w') as f: json.dump(preds, f)
     import io; from contextlib import redirect_stdout
     with redirect_stdout(io.StringIO()):
-        coco_eval = COCOeval(COCO(val_json), COCO(val_json).loadRes(f"tmp_dptext_{v}.json"), 'bbox')
+        coco_eval = COCOeval(COCO(val_json), COCO(val_json).loadRes(f"tmp_{v}.json"), 'bbox')
         
-        # ⚠️ PERBAIKAN 1: Wajib memasukkan angka 100 agar pycocotools tidak error
-        max_queries = 1000  # Karena skrip ini DPText
-        coco_eval.params.maxDets = [1, 10, 100, max_queries] 
+        # ==============================================================
+        # 🕵️‍♂️ THE HACK: Memanipulasi Laci Memori PyCOCOtools
+        # ==============================================================
+        max_queries = 1000  # ⚠️ UBAH JADI 1000 JIKA INI SCRIPT DPTEXT
         
-        coco_eval.evaluate(); coco_eval.accumulate(); coco_eval.summarize()
-    os.remove(f"tmp_dptext_{v}.json")
+        # 1. Hitung 1500 prediksi dan simpan di memori
+        coco_eval.params.maxDets = [1, 10, max_queries] 
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        
+        # 2. Tipu sistem sebelum ia merangkum (Ganti label laci)
+        coco_eval.params.maxDets = [1, 10, 100]
+        coco_eval.summarize()
+        # ==============================================================
+        
+    os.remove(f"tmp_{v}.json")
     
-    # ⚠️ PERBAIKAN 2: Ekstraksi manual spesifik untuk batas max_queries kita
-    m_5095 = coco_eval._summarize(1, maxDets=max_queries)
-    m_50   = coco_eval._summarize(1, iouThr=.5, maxDets=max_queries)
-    m_75   = coco_eval._summarize(1, iouThr=.75, maxDets=max_queries)
-    m_S    = coco_eval._summarize(1, areaRng='small', maxDets=max_queries)
-    m_M    = coco_eval._summarize(1, areaRng='medium', maxDets=max_queries)
-
-    # ⚠️ PERBAIKAN 3: Filter nilai -1.0 menjadi 0 agar logic _best.pth berjalan
+    # Karena kita sudah menipu sistem, 'stats' bawaan sekarang berisi data 1500!
     metrics = {
-        "mAP_50_95": m_5095 if m_5095 > -1 else 0,
-        "mAP_50": m_50 if m_50 > -1 else 0,
-        "mAP_75": m_75 if m_75 > -1 else 0,
-        "mAP_S": m_S if m_S > -1 else 0,
-        "mAP_M": m_M if m_M > -1 else 0,
+        "mAP_50_95": coco_eval.stats[0],
+        "mAP_50": coco_eval.stats[1],
+        "mAP_75": coco_eval.stats[2],
+        "mAP_S": coco_eval.stats[3],
+        "mAP_M": coco_eval.stats[4],
     }
     return 0, metrics
 
