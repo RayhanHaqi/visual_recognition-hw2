@@ -25,8 +25,8 @@ os.makedirs(LOG_DIR, exist_ok=True)
 dptext_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.4, contrast=0.4), 
     transforms.RandomGrayscale(p=0.2),
-    transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)), # Blur Ekstrem
-    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)), 
+    # HAPUS baris RandomHorizontalFlip
     transforms.Resize((IMG_SIZE, IMG_SIZE)), 
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -39,9 +39,18 @@ val_transform = transforms.Compose([
 
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
-        id = self.ids[index]; img = self._load_image(id); tgt = self._load_target(id)
-        if self.transforms is not None: img, tgt = self.transforms(img, tgt)
-        return img, tgt, id, img.size[0], img.size[1]
+        id = self.ids[index]
+        img = self._load_image(id)
+        tgt = self._load_target(id)
+        
+        # 1. Catat ukuran asli saat masih berupa PIL Image
+        orig_w, orig_h = img.size 
+        
+        # 2. Gunakan self.transforms bawaan (WAJIB 2 argumen)
+        if self.transforms is not None: 
+            img, tgt = self.transforms(img, tgt)
+            
+        return img, tgt, id, orig_w, orig_h
 
 def collate_fn(batch):
     return torch.stack([i[0] for i in batch], 0), [i[1] for i in batch], [i[2] for i in batch], [(i[3], i[4]) for i in batch]
@@ -117,7 +126,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("version", choices=["v1", "v2"]); parser.add_argument("--epochs", type=int, default=150)
     args = parser.parse_args()
-    DEVICE = torch.device("cuda:1")
+    DEVICE = torch.device("cuda:0")
     run_name = f"dptext_{args.version}"
     writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, run_name))
 
@@ -136,7 +145,7 @@ def main():
     # SETUP EMA (Exponential Moving Average)
     ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
 
-    scheduler = SequentialLR(optimizer, [LinearLR(optimizer, 0.01, 5), CosineAnnealingLR(optimizer, args.epochs-5, 1e-6)], [5])
+    scheduler = SequentialLR(optimizer, schedulers=[LinearLR(optimizer, start_factor=0.01, total_iters=5), CosineAnnealingLR(optimizer, T_max=args.epochs-5, eta_min=1e-6)], milestones=[5])
 
     best_map = 0.0; epoch = 1
     while epoch <= args.epochs:

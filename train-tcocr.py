@@ -24,8 +24,8 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Ditambahkan RandomAffine(translate) untuk mensimulasikan pergeseran/crop ringan
 tcocr_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.2, contrast=0.2), 
-    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)), 
-    transforms.RandomHorizontalFlip(p=0.5),
+    # HAPUS baris RandomAffine
+    # HAPUS baris RandomHorizontalFlip
     transforms.Resize((IMG_SIZE, IMG_SIZE)), 
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -38,9 +38,18 @@ val_transform = transforms.Compose([
 
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
-        id = self.ids[index]; img = self._load_image(id); tgt = self._load_target(id)
-        if self.transforms is not None: img, tgt = self.transforms(img, tgt)
-        return img, tgt, id, img.size[0], img.size[1]
+        id = self.ids[index]
+        img = self._load_image(id)
+        tgt = self._load_target(id)
+        
+        # 1. Catat ukuran asli saat masih berupa PIL Image
+        orig_w, orig_h = img.size 
+        
+        # 2. Gunakan self.transforms bawaan (WAJIB 2 argumen)
+        if self.transforms is not None: 
+            img, tgt = self.transforms(img, tgt)
+            
+        return img, tgt, id, orig_w, orig_h
 
 def collate_fn(batch):
     return torch.stack([i[0] for i in batch], 0), [i[1] for i in batch], [i[2] for i in batch], [(i[3], i[4]) for i in batch]
