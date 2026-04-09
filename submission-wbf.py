@@ -10,18 +10,42 @@ DEVICE = torch.device("cuda:1")
 
 def load_smart_model(ckpt_path):
     name = os.path.basename(ckpt_path).lower()
+    
+    # Deteksi Queries
     q = 1500 if "tcocr" in name else 1000 if "dptext" in name else 300
+    
+    # Deteksi Arsitektur Base
     cfg_base = "PekingU/rtdetr_r50vd" if "v1" in name else "PekingU/rtdetr_v2_r50vd"
     
     if "v1" in name:
-        cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=10); cfg.num_queries = q
+        cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=10)
+        cfg.num_queries = q
         model = RTDetrForObjectDetection.from_pretrained(cfg_base, config=cfg, ignore_mismatched_sizes=True)
     else:
-        cfg = RTDetrV2Config.from_pretrained(cfg_base, num_labels=10); cfg.num_queries = q
+        cfg = RTDetrV2Config.from_pretrained(cfg_base, num_labels=10)
+        cfg.num_queries = q
         model = RTDetrV2ForObjectDetection.from_pretrained(cfg_base, config=cfg, ignore_mismatched_sizes=True)
     
     print(f"✅ Memuat: {name} | Arsitektur: {'V1' if 'v1' in name else 'V2'} | Queries: {q}")
-    model.load_state_dict(torch.load(ckpt_path, map_location=DEVICE))
+    
+    # ==========================================
+    # ⚠️ PERBAIKAN: MENCUKUR PREFIX "model."
+    # ==========================================
+    state_dict = torch.load(ckpt_path, map_location=DEVICE)
+    cleaned_state_dict = {}
+    
+    for key, value in state_dict.items():
+        # Jika kunci berawalan "model.", potong 6 karakter pertamanya
+        if key.startswith('model.'):
+            cleaned_key = key[6:] 
+            cleaned_state_dict[cleaned_key] = value
+        else:
+            cleaned_state_dict[key] = value
+            
+    # Load state dict yang sudah bersih
+    model.load_state_dict(cleaned_state_dict)
+    # ==========================================
+    
     return model.to(DEVICE).eval()
 
 def main():
