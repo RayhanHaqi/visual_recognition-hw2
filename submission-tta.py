@@ -82,7 +82,7 @@ def main():
                     })
 
     with open("pred.json", 'w') as f: json.dump(predictions, f)
-    zip_name = f"tta_{model_name}.zip"
+    zip_name = f"submission/tta_{model_name}.zip"
     with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as z: z.write("pred.json")
     print(f"🎉 Selesai! File tersimpan sebagai: {zip_name}")
 
