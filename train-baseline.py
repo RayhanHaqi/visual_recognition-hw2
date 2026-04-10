@@ -174,7 +174,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=100)
     args = parser.parse_args()
 
-    DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     run_name = f"strict_baseline_{args.version}"
     writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, run_name))
 

@@ -126,7 +126,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("version", choices=["v1", "v2"]); parser.add_argument("--epochs", type=int, default=150)
     args = parser.parse_args()
-    DEVICE = torch.device("cuda:0")
+    DEVICE = torch.device("cuda:1")
     run_name = f"dptext_{args.version}"
     writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, run_name))
 

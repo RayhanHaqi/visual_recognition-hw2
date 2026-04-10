@@ -144,7 +144,8 @@ def main():
     # SETUP EMA (Exponential Moving Average)
     ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
 
-    scheduler = SequentialLR(optimizer, [LinearLR(optimizer, 0.01, 5), CosineAnnealingLR(optimizer, args.epochs-5, 1e-6)], [5])
+    scheduler = SequentialLR(optimizer, schedulers=[LinearLR(optimizer, start_factor=0.01, total_iters=5), CosineAnnealingLR(optimizer, T_max=args.epochs-5, eta_min=1e-6)], milestones=[5])
+
 
     best_map = 0.0; epoch = 1
     while epoch <= args.epochs:
