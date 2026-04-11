@@ -1,5 +1,4 @@
-import os, json, argparse, gc, torch
-import torch.nn as nn
+import os, json, argparse, gc, torch, sys
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CocoDetection
@@ -11,24 +10,33 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from transformers import RTDetrConfig, RTDetrForObjectDetection, RTDetrV2Config, RTDetrV2ForObjectDetection
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 
-# ================= KONFIGURASI =================
+class EarlyStopping:
+    def __init__(self, patience=30, min_delta=0.001, warm_up=20):
+        self.patience, self.min_delta, self.warm_up = patience, min_delta, warm_up
+        self.counter, self.best_score = 0, None; self.early_stop = False
+    def __call__(self, current_score, epoch):
+        if epoch < self.warm_up: return False
+        if self.best_score is None: self.best_score = current_score
+        elif current_score < self.best_score + self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience: self.early_stop = True
+        else: self.best_score = current_score; self.counter = 0
+        return self.early_stop
+
 DATA_ROOT_TRAIN, ANN_FILE_TRAIN = "./datasets/train", "./datasets/train.json"
 DATA_ROOT_VAL, ANN_FILE_VAL = "./datasets/valid", "./datasets/valid.json"
 CHECKPOINT_DIR, LOG_DIR = "./checkpoints", "./log"
-IMG_SIZE, NUM_CLASSES, LR, INITIAL_BATCH_SIZE = 640, 10, 1e-4, 64
+os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
-os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
+IMG_SIZE, NUM_CLASSES, LR = 640, 10, 1e-4
+PHYSICAL_BATCH_SIZE = 4
+GRAD_ACCUM_STEPS = 8
 
-# ================= AUGMENTASI DPTEXT =================
-# Heavy Augmentation: Simulasi teks buram, pudar, dan goyang
 dptext_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.4, contrast=0.4), 
     transforms.RandomGrayscale(p=0.2),
     transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0)), 
-    # HAPUS baris RandomHorizontalFlip
-    transforms.Resize((IMG_SIZE, IMG_SIZE)), 
-    transforms.ToTensor(),
+    transforms.Resize((IMG_SIZE, IMG_SIZE)), transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
@@ -39,152 +47,105 @@ val_transform = transforms.Compose([
 
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
-        id = self.ids[index]
-        img = self._load_image(id)
-        tgt = self._load_target(id)
-        
-        # 1. Catat ukuran asli saat masih berupa PIL Image
-        orig_w, orig_h = img.size 
-        
-        # 2. Gunakan self.transforms bawaan (WAJIB 2 argumen)
-        if self.transforms is not None: 
-            img, tgt = self.transforms(img, tgt)
-            
+        id = self.ids[index]; img = self._load_image(id); tgt = self._load_target(id); orig_w, orig_h = img.size 
+        if self.transforms: img, tgt = self.transforms(img, tgt)
         return img, tgt, id, orig_w, orig_h
 
-def collate_fn(batch):
-    return torch.stack([i[0] for i in batch], 0), [i[1] for i in batch], [i[2] for i in batch], [(i[3], i[4]) for i in batch]
+def collate_fn(batch): return torch.stack([i[0] for i in batch], 0), [i[1] for i in batch], [i[2] for i in batch], [(i[3], i[4]) for i in batch]
 
 def prepare_targets(targets, sizes, dev):
     res = []
     for i, t in enumerate(targets):
         b, l = [], []
         for o in t:
-            x, y, w, h = o['bbox']
-            if w > 0 and h > 0:
+            x,y,w,h = o['bbox']
+            if w>0 and h>0:
                 b.append([(x+w/2)/sizes[i][0], (y+h/2)/sizes[i][1], w/sizes[i][0], h/sizes[i][1]])
-                l.append(o['category_id'] - 1)
+                l.append(o['category_id']-1)
         if b: res.append({"boxes": torch.tensor(b, dtype=torch.float32).to(dev), "class_labels": torch.tensor(l, dtype=torch.long).to(dev)})
     return res
 
-# ================= BUILDER STRICT RULE (1000 QUERIES) =================
-def build_dptext_model(version="v1", device="cuda:1"):
-    print(f"🛠️ Membangun Model Strict DPText: {version.upper()} (1000 Queries)")
+def build_model(version, device):
+    print(f"🛠️ Membangun Model DPText UNFROZEN: {version.upper()}")
     cfg_base = "PekingU/rtdetr_r50vd" if version == "v1" else "PekingU/rtdetr_v2_r50vd"
+    cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=NUM_CLASSES) if version=="v1" else RTDetrV2Config.from_pretrained(cfg_base, num_labels=NUM_CLASSES)
+    cfg.num_queries = 500 # SAKTI: Diturunkan jadi 500 agar sangat aman di 16GB
     
-    if version == "v1":
-        cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=NUM_CLASSES); cfg.num_queries = 1000
-        model = RTDetrForObjectDetection(config=cfg)
-    else:
-        cfg = RTDetrV2Config.from_pretrained(cfg_base, num_labels=NUM_CLASSES); cfg.num_queries = 1000
-        model = RTDetrV2ForObjectDetection(config=cfg)
-
-    pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version == "v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
+    model = RTDetrForObjectDetection(config=cfg) if version=="v1" else RTDetrV2ForObjectDetection(config=cfg)
+    pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version=="v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
     model.load_state_dict({k: v for k, v in pretrained.state_dict().items() if 'backbone' in k}, strict=False)
     
-    for name, param in model.named_parameters():
-        param.requires_grad = False if 'backbone' in name else True
-            
+    model.model.gradient_checkpointing_enable()
+    for p in model.parameters(): p.requires_grad = True
+    
     del pretrained; gc.collect()
     return model.to(device)
 
 def validate_and_evaluate(model, loader, device, val_json_path, version):
-    model.eval(); total_loss = 0; predictions = []
+    model.eval(); predictions = []
     with torch.no_grad():
         for images, targets, image_ids, orig_sizes in tqdm(loader, desc="Validation", leave=False):
             images = images.to(device); formatted_targets = prepare_targets(targets, orig_sizes, device)
-            with torch.amp.autocast('cuda'):
-                outputs = model(images, labels=formatted_targets)
-                total_loss += outputs.loss.item()
-            
+            with torch.amp.autocast('cuda'): outputs = model(images)
             probs = outputs.logits.sigmoid()
             for i in range(len(images)):
                 img_id, (orig_w, orig_h) = image_ids[i], orig_sizes[i]
-                scores, labels = probs[i].max(dim=-1); keep = scores > 0.05 
+                scores, labels = probs[i].max(-1); keep = scores > 0.05
                 for box, score, label in zip(outputs.pred_boxes[i][keep], scores[keep], labels[keep]):
-                    cx, cy, norm_w, norm_h = box.tolist()
-                    w, h = norm_w * orig_w, norm_h * orig_h
-                    predictions.append({
-                        "image_id": img_id, "category_id": int(label.item()) + 1, 
-                        "bbox": [round((cx * orig_w) - (w / 2), 2), round((cy * orig_h) - (h / 2), 2), round(w, 2), round(h, 2)],
-                        "score": round(score.item(), 4)
-                    })
+                    cx,cy,nw,nh = box.tolist(); w,h = nw*orig_w, nh*orig_h
+                    predictions.append({"image_id":img_id, "category_id":int(label)+1, "bbox":[round((cx*orig_w)-(w/2),2), round((cy*orig_h)-(h/2),2), round(w,2), round(h,2)], "score":round(float(score),4)})
+    if not predictions: return 0.0
+    tmp = f"tmp_dptext_{version}.json"
+    with open(tmp,'w') as f: json.dump(predictions,f)
+    coco_gt = COCO(val_json_path); coco_eval = COCOeval(coco_gt, coco_gt.loadRes(tmp), 'bbox')
+    coco_eval.evaluate(); coco_eval.accumulate(); coco_eval.summarize()
+    os.remove(tmp); return coco_eval.stats[0]
 
-    if len(predictions) > 0:
-        tmp = f"tmp_{version}.json"
-        with open(tmp, 'w') as f: json.dump(predictions, f)
-        import io; from contextlib import redirect_stdout
-        with redirect_stdout(io.StringIO()):
-            coco_eval = COCOeval(COCO(val_json_path), COCO(val_json_path).loadRes(tmp), 'bbox')
-            coco_eval.evaluate(); coco_eval.accumulate(); coco_eval.summarize()
-        os.remove(tmp) 
-        return total_loss/len(loader), coco_eval.stats[0]
-    return total_loss/len(loader), 0.0
-
-# ================= MAIN LOOP =================
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("version", choices=["v1", "v2"]); parser.add_argument("--epochs", type=int, default=150)
-    args = parser.parse_args()
-    DEVICE = torch.device("cuda:1")
-    run_name = f"dptext_{args.version}"
+    parser.add_argument("version", choices=["v1", "v2"])
+    parser.add_argument("--gpu", type=int, default=0, help="ID GPU")
+    parser.add_argument("--epochs", type=int, default=150)
+    args = parser.parse_args(); DEVICE = torch.device(f"cuda:{args.gpu}")
+    
+    run_name = f"unfrozen_dptext_{args.version}"
     writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, run_name))
-
-    train_ds = CustomCocoDetection(DATA_ROOT_TRAIN, ANN_FILE_TRAIN, transform=dptext_transform)
-    val_ds = CustomCocoDetection(DATA_ROOT_VAL, ANN_FILE_VAL, transform=val_transform)
+    print(f"🚀 Menjalankan {run_name} di {DEVICE}")
     
-    bs = INITIAL_BATCH_SIZE
-    train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, collate_fn=collate_fn, num_workers=8)
-    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, collate_fn=collate_fn, num_workers=8)
+    train_loader = DataLoader(CustomCocoDetection(DATA_ROOT_TRAIN, ANN_FILE_TRAIN, dptext_transform), batch_size=PHYSICAL_BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
+    val_loader = DataLoader(CustomCocoDetection(DATA_ROOT_VAL, ANN_FILE_VAL, val_transform), batch_size=PHYSICAL_BATCH_SIZE, collate_fn=collate_fn, num_workers=8)
 
-    model = build_dptext_model(args.version, DEVICE)
-    active_params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(active_params, lr=LR, weight_decay=1e-4)
+    model = build_model(args.version, DEVICE)
+    optimizer = torch.optim.AdamW([{"params":[p for n,p in model.named_parameters() if "backbone" not in n], "lr":LR}, {"params":[p for n,p in model.named_parameters() if "backbone" in n], "lr":LR*0.1}], weight_decay=1e-4)
     scaler = torch.amp.GradScaler('cuda')
-    
-    # SETUP EMA (Exponential Moving Average)
     ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
+    scheduler = SequentialLR(optimizer, [LinearLR(optimizer,0.01,5), CosineAnnealingLR(optimizer, args.epochs-5,1e-6)], [5])
+    early_stopper = EarlyStopping(patience=30)
 
-    scheduler = SequentialLR(optimizer, schedulers=[LinearLR(optimizer, start_factor=0.01, total_iters=5), CosineAnnealingLR(optimizer, T_max=args.epochs-5, eta_min=1e-6)], milestones=[5])
-
-    best_map = 0.0; epoch = 1
+    best_map, epoch = 0.0, 1
     while epoch <= args.epochs:
-        try:
-            model.train(); total_loss = 0
-            pb = tqdm(train_loader, desc=f"DPText Ep {epoch}/{args.epochs} (BS: {bs})")
-            for images, targets, _, orig_sizes in pb:
-                images = images.to(DEVICE); formatted_targets = prepare_targets(targets, orig_sizes, DEVICE)
-                optimizer.zero_grad()
-                with torch.amp.autocast('cuda'): loss = model(images, labels=formatted_targets).loss
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer); torch.nn.utils.clip_grad_norm_(active_params, 0.1)
-                scaler.step(optimizer); scaler.update()
-                
-                # UPDATE EMA
+        model.train(); optimizer.zero_grad()
+        pb = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Ep {epoch}/{args.epochs}")
+        for i, (images, targets, _, sizes) in pb:
+            images = images.to(DEVICE); targets = prepare_targets(targets, sizes, DEVICE)
+            with torch.amp.autocast('cuda'): loss = model(images, labels=targets).loss / GRAD_ACCUM_STEPS
+            scaler.scale(loss).backward()
+            if (i+1) % GRAD_ACCUM_STEPS == 0:
+                scaler.unscale_(optimizer); torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+                scaler.step(optimizer); scaler.update(); optimizer.zero_grad()
                 ema_model.update_parameters(model)
-                total_loss += loss.item(); pb.set_postfix({"loss": f"{loss.item():.4f}"})
-                
-            # EVALUASI MENGGUNAKAN EMA
-            v_loss, mAP = validate_and_evaluate(ema_model.module, val_loader, DEVICE, ANN_FILE_VAL, args.version)
+            pb.set_postfix({"loss": f"{loss.item() * GRAD_ACCUM_STEPS:.4f}"})
             
-            print(f"📈 Ep {epoch} | mAP_50-95 (EMA): {mAP:.4f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
-            writer.add_scalar('Metrics/mAP_50_95', mAP, epoch)
+        mAP = validate_and_evaluate(ema_model.module, val_loader, DEVICE, ANN_FILE_VAL, args.version)
+        print(f"📈 Ep {epoch} | mAP (EMA): {mAP:.4f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
+        writer.add_scalar('Metrics/mAP_50_95', mAP, epoch); scheduler.step()
+        
+        if mAP > best_map: 
+            best_map = mAP; torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
+            print(f"🏆 Best mAP baru: {best_map:.4f} - Tersimpan!")
             
-            if mAP > best_map:
-                best_map = mAP; torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
-                print(f"🏆 New Best mAP_50-95: {best_map:.4f} - Model disimpan!")
-            # torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_last.pth")
-            
-            scheduler.step(); epoch += 1
-            
-        except RuntimeError as e:
-            if 'out of memory' in str(e).lower():
-                print(f"⚠️ OOM! Turunkan Batch Size ke {bs - 4}..."); bs -= 4
-                if bs < 1: break
-                model.zero_grad(); optimizer.zero_grad(); torch.cuda.empty_cache(); gc.collect()
-                train_loader = DataLoader(train_ds, batch_size=bs, shuffle=True, collate_fn=collate_fn, num_workers=8)
-                val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, collate_fn=collate_fn, num_workers=8)
-            else: raise e
+        if early_stopper(mAP, epoch): print("🛑 Early Stopping aktif!"); break
+        epoch += 1
     writer.close()
 
 if __name__ == "__main__": main()
