@@ -1,0 +1,1 @@
+Epoch,Train_Loss,Val_Loss,mAP_50_95_EMA,mAP_50_EMA,mAP_75_EMA,LR
