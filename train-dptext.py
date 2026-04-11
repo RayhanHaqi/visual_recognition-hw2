@@ -107,7 +107,6 @@ def main():
     parser.add_argument("version", choices=["v1", "v2"])
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=150)
-    parser.add_argument("--resume", type=str, default=None, help="Path ke file _latest.pth untuk melanjutkan training")
     args = parser.parse_args(); DEVICE = torch.device(f"cuda:{args.gpu}")
     
     global PHYSICAL_BATCH_SIZE, GRAD_ACCUM_STEPS
@@ -115,13 +114,11 @@ def main():
     
     run_name = f"unfrozen_dptext_{args.version}"
     csv_path = os.path.join(LOG_DIR, f"{run_name}.csv")
-    latest_ckpt_path = f"{CHECKPOINT_DIR}/{run_name}_latest.pth"
     print(f"🚀 Menjalankan {run_name} di {DEVICE}")
     
-    if not os.path.exists(csv_path):
-        with open(csv_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Epoch', 'Train_Loss', 'Val_Loss', 'mAP_50_95_EMA', 'mAP_50_EMA', 'mAP_75_EMA', 'LR'])
+    with open(csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Epoch', 'Train_Loss', 'Val_Loss', 'mAP_50_95_EMA', 'mAP_50_EMA', 'mAP_75_EMA', 'LR'])
 
     model = build_model(args.version, DEVICE)
     optimizer = torch.optim.AdamW([
@@ -141,27 +138,8 @@ def main():
     )
     early_stopper = EarlyStopping(patience=30)
 
-    best_map, start_epoch = 0.0, 1
+    best_map, epoch = 0.0, 1
 
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print(f"\n🔄 Memuat Checkpoint dari: {args.resume}")
-            checkpoint = torch.load(args.resume, map_location=DEVICE)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            ema_model.load_state_dict(checkpoint['ema_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            scaler.load_state_dict(checkpoint['scaler_state_dict'])
-            start_epoch = checkpoint['epoch'] + 1
-            best_map = checkpoint['best_map']
-            print(f"✅ Berhasil! Melanjutkan dari Epoch {start_epoch}. (Best mAP sebelumnya: {best_map:.4f})\n")
-        else:
-            print(f"\n❌ ERROR: File {args.resume} tidak ditemukan! Menghentikan skrip.")
-            sys.exit(1)
-    else:
-        print(f"\n🆕 Memulai training dari awal (Epoch 1)...\n")
-    
-    epoch = start_epoch
     while epoch <= args.epochs:
         try:
             train_loader = DataLoader(CustomCocoDetection(DATA_ROOT_TRAIN, ANN_FILE_TRAIN, dptext_transform), batch_size=PHYSICAL_BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
@@ -196,17 +174,6 @@ def main():
             if mAP > best_map: 
                 best_map = mAP; torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
                 print(f"🏆 Best mAP baru: {best_map:.4f} - Tersimpan!")
-            
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'ema_state_dict': ema_model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'scaler_state_dict': scaler.state_dict(),
-                'best_map': best_map
-            }
-            torch.save(checkpoint, latest_ckpt_path)
                 
             if early_stopper(mAP, epoch): break
             epoch += 1
