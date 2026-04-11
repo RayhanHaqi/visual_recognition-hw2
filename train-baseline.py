@@ -29,7 +29,6 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
 IMG_SIZE, NUM_CLASSES, LR = 640, 10, 1e-4
 
-# Default Batch Size
 PHYSICAL_BATCH_SIZE = 8
 GRAD_ACCUM_STEPS = 4
 
@@ -74,7 +73,6 @@ def build_model(version, device):
     model = RTDetrForObjectDetection(config=cfg) if version == "v1" else RTDetrV2ForObjectDetection(config=cfg)
     pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version == "v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
     model.load_state_dict({k: v for k, v in pretrained.state_dict().items() if 'backbone' in k}, strict=False)
-    
     for p in model.parameters(): p.requires_grad = True
     del pretrained; gc.collect()
     return model.to(device)
@@ -109,7 +107,6 @@ def main():
     parser.add_argument("version", choices=["v1", "v2"])
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=150)
-    # 🎯 KEMBALI MENGGUNAKAN MANUAL RESUME ARGUMENT
     parser.add_argument("--resume", type=str, default=None, help="Path ke file _latest.pth untuk melanjutkan training")
     args = parser.parse_args(); DEVICE = torch.device(f"cuda:{args.gpu}")
     
@@ -146,28 +143,22 @@ def main():
 
     best_map, start_epoch = 0.0, 1
 
-    # ==========================================
-    # MANUAL RESUME (BERDASARKAN INPUT USER)
-    # ==========================================
     if args.resume:
         if os.path.isfile(args.resume):
             print(f"\n🔄 Memuat Checkpoint dari: {args.resume}")
             checkpoint = torch.load(args.resume, map_location=DEVICE)
-            
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             scaler.load_state_dict(checkpoint['scaler_state_dict'])
-            
             start_epoch = checkpoint['epoch'] + 1
             best_map = checkpoint['best_map']
             print(f"✅ Berhasil! Melanjutkan dari Epoch {start_epoch}. (Best mAP sebelumnya: {best_map:.4f})\n")
         else:
             print(f"\n❌ ERROR: File {args.resume} tidak ditemukan! Menghentikan skrip.")
-            sys.exit(1) # Berhenti jika salah ketik path, agar aman
+            sys.exit(1)
     else:
         print(f"\n🆕 Memulai training dari awal (Epoch 1)...\n")
-    # ==========================================
     
     epoch = start_epoch
     while epoch <= args.epochs:
@@ -179,10 +170,8 @@ def main():
             pb = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Ep {epoch}/{args.epochs} (BS: {PHYSICAL_BATCH_SIZE})")
             for i, (images, targets, _, orig_sizes) in pb:
                 images = images.to(DEVICE); formatted_targets = prepare_targets(targets, orig_sizes, DEVICE)
-                
                 with torch.amp.autocast('cuda'): 
                     loss = model(images, labels=formatted_targets).loss / GRAD_ACCUM_STEPS
-                    
                 scaler.scale(loss).backward()
                 
                 if (i + 1) % GRAD_ACCUM_STEPS == 0:
@@ -197,7 +186,6 @@ def main():
             cur_lr = optimizer.param_groups[0]['lr']
             
             print(f"📈 Ep {epoch} | T_Loss: {avg_train_loss:.4f} | V_Loss: {v_loss:.4f} | mAP: {mAP:.4f} | mAP50: {mAP50:.4f}")
-            
             with open(csv_path, 'a', newline='') as f:
                 csv.writer(f).writerow([epoch, round(avg_train_loss, 4), round(v_loss, 4), round(mAP, 4), round(mAP50, 4), round(mAP75, 4), cur_lr])
                 
@@ -207,7 +195,6 @@ def main():
                 best_map = mAP; torch.save(model.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
                 print(f"🏆 Best mAP baru: {best_map:.4f} - Tersimpan!")
             
-            # Tetap save file _latest.pth setiap epoch untuk jaga-jaga
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -224,18 +211,13 @@ def main():
             
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                optimizer.zero_grad()
-                torch.cuda.empty_cache()
-                gc.collect()
+                optimizer.zero_grad(); torch.cuda.empty_cache(); gc.collect()
                 print(f"\n⚠️ OOM Terdeteksi di Epoch {epoch}! Menyelamatkan VRAM...")
                 if PHYSICAL_BATCH_SIZE <= 1:
-                    print("❌ GAGAL: Batch Size sudah 1 tapi tetap OOM. Hentikan training.")
-                    break
+                    print("❌ GAGAL: Batch Size sudah 1 tapi tetap OOM. Hentikan training."); break
                 PHYSICAL_BATCH_SIZE = max(1, PHYSICAL_BATCH_SIZE - 2) 
                 GRAD_ACCUM_STEPS = max(1, EFFECTIVE_BATCH_SIZE // PHYSICAL_BATCH_SIZE)
-                print(f"🔄 Mengurangi Batch Size menjadi: {PHYSICAL_BATCH_SIZE}")
-                print(f"🔄 Menaikkan Accumulation menjadi: {GRAD_ACCUM_STEPS}")
-                print(f"♻️ Mengulang Epoch {epoch}...\n")
+                print(f"🔄 Mengurangi Batch Size menjadi: {PHYSICAL_BATCH_SIZE} | Accumulation: {GRAD_ACCUM_STEPS}\n")
             else: raise e
 
 if __name__ == "__main__": main()
