@@ -29,8 +29,8 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
 IMG_SIZE, NUM_CLASSES, LR = 640, 10, 1e-4
 
-PHYSICAL_BATCH_SIZE = 32
-GRAD_ACCUM_STEPS = 1
+PHYSICAL_BATCH_SIZE = 8
+GRAD_ACCUM_STEPS = 4
 
 dptext_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.4, contrast=0.4), 
@@ -69,11 +69,10 @@ def build_model(version, device):
     print(f"🛠️ Membangun Model DPText UNFROZEN: {version.upper()}")
     cfg_base = "PekingU/rtdetr_r50vd" if version == "v1" else "PekingU/rtdetr_v2_r50vd"
     cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=NUM_CLASSES) if version=="v1" else RTDetrV2Config.from_pretrained(cfg_base, num_labels=NUM_CLASSES)
-    cfg.num_queries = 1000
+    cfg.num_queries = 500 
     model = RTDetrForObjectDetection(config=cfg) if version=="v1" else RTDetrV2ForObjectDetection(config=cfg)
     pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version=="v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
     model.load_state_dict({k: v for k, v in pretrained.state_dict().items() if 'backbone' in k}, strict=False)
-    
     for p in model.parameters(): p.requires_grad = True
     del pretrained; gc.collect()
     return model.to(device)
@@ -108,6 +107,7 @@ def main():
     parser.add_argument("version", choices=["v1", "v2"])
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=150)
+    parser.add_argument("--resume", type=str, default=None, help="Path ke file _latest.pth untuk melanjutkan training")
     args = parser.parse_args(); DEVICE = torch.device(f"cuda:{args.gpu}")
     
     global PHYSICAL_BATCH_SIZE, GRAD_ACCUM_STEPS
@@ -115,6 +115,7 @@ def main():
     
     run_name = f"unfrozen_dptext_{args.version}"
     csv_path = os.path.join(LOG_DIR, f"{run_name}.csv")
+    latest_ckpt_path = f"{CHECKPOINT_DIR}/{run_name}_latest.pth"
     print(f"🚀 Menjalankan {run_name} di {DEVICE}")
     
     if not os.path.exists(csv_path):
@@ -140,8 +141,27 @@ def main():
     )
     early_stopper = EarlyStopping(patience=30)
 
-    best_map, epoch = 0.0, 1
+    best_map, start_epoch = 0.0, 1
+
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print(f"\n🔄 Memuat Checkpoint dari: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=DEVICE)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            ema_model.load_state_dict(checkpoint['ema_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            scaler.load_state_dict(checkpoint['scaler_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            best_map = checkpoint['best_map']
+            print(f"✅ Berhasil! Melanjutkan dari Epoch {start_epoch}. (Best mAP sebelumnya: {best_map:.4f})\n")
+        else:
+            print(f"\n❌ ERROR: File {args.resume} tidak ditemukan! Menghentikan skrip.")
+            sys.exit(1)
+    else:
+        print(f"\n🆕 Memulai training dari awal (Epoch 1)...\n")
     
+    epoch = start_epoch
     while epoch <= args.epochs:
         try:
             train_loader = DataLoader(CustomCocoDetection(DATA_ROOT_TRAIN, ANN_FILE_TRAIN, dptext_transform), batch_size=PHYSICAL_BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
@@ -151,10 +171,8 @@ def main():
             pb = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Ep {epoch}/{args.epochs} (BS: {PHYSICAL_BATCH_SIZE})")
             for i, (images, targets, _, sizes) in pb:
                 images = images.to(DEVICE); targets = prepare_targets(targets, sizes, DEVICE)
-                
                 with torch.amp.autocast('cuda'): 
                     loss = model(images, labels=targets).loss / GRAD_ACCUM_STEPS
-                    
                 scaler.scale(loss).backward()
                 
                 if (i+1) % GRAD_ACCUM_STEPS == 0:
@@ -170,7 +188,6 @@ def main():
             cur_lr = optimizer.param_groups[0]['lr']
             
             print(f"📈 Ep {epoch} | T_Loss: {avg_loss:.4f} | V_Loss: {v_loss:.4f} | mAP: {mAP:.4f} | mAP50: {mAP50:.4f}")
-            
             with open(csv_path, 'a', newline='') as f:
                 csv.writer(f).writerow([epoch, round(avg_loss, 4), round(v_loss, 4), round(mAP, 4), round(mAP50, 4), round(mAP75, 4), cur_lr])
                 
@@ -179,24 +196,30 @@ def main():
             if mAP > best_map: 
                 best_map = mAP; torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
                 print(f"🏆 Best mAP baru: {best_map:.4f} - Tersimpan!")
+            
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'ema_state_dict': ema_model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'scaler_state_dict': scaler.state_dict(),
+                'best_map': best_map
+            }
+            torch.save(checkpoint, latest_ckpt_path)
                 
             if early_stopper(mAP, epoch): break
             epoch += 1
             
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                optimizer.zero_grad()
-                torch.cuda.empty_cache()
-                gc.collect()
+                optimizer.zero_grad(); torch.cuda.empty_cache(); gc.collect()
                 print(f"\n⚠️ OOM Terdeteksi di Epoch {epoch}! Menyelamatkan VRAM...")
                 if PHYSICAL_BATCH_SIZE <= 1:
-                    print("❌ GAGAL: Batch Size sudah 1 tapi tetap OOM. Hentikan training.")
-                    break
+                    print("❌ GAGAL: Batch Size sudah 1 tapi tetap OOM. Hentikan training."); break
                 PHYSICAL_BATCH_SIZE = max(1, PHYSICAL_BATCH_SIZE - 2)
                 GRAD_ACCUM_STEPS = max(1, EFFECTIVE_BATCH_SIZE // PHYSICAL_BATCH_SIZE)
-                print(f"🔄 Mengurangi Batch Size menjadi: {PHYSICAL_BATCH_SIZE}")
-                print(f"🔄 Menaikkan Accumulation menjadi: {GRAD_ACCUM_STEPS}")
-                print(f"♻️ Mengulang Epoch {epoch}...\n")
+                print(f"🔄 Mengurangi Batch Size menjadi: {PHYSICAL_BATCH_SIZE} | Accumulation: {GRAD_ACCUM_STEPS}\n")
             else: raise e
 
 if __name__ == "__main__": main()
