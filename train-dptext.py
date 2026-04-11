@@ -1,11 +1,10 @@
-import os, json, argparse, gc, torch, sys
+import os, json, argparse, gc, torch, sys, csv
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CocoDetection
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from transformers import RTDetrConfig, RTDetrForObjectDetection, RTDetrV2Config, RTDetrV2ForObjectDetection
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
@@ -69,15 +68,12 @@ def build_model(version, device):
     print(f"🛠️ Membangun Model DPText UNFROZEN: {version.upper()}")
     cfg_base = "PekingU/rtdetr_r50vd" if version == "v1" else "PekingU/rtdetr_v2_r50vd"
     cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=NUM_CLASSES) if version=="v1" else RTDetrV2Config.from_pretrained(cfg_base, num_labels=NUM_CLASSES)
-    cfg.num_queries = 500 # SAKTI: Diturunkan jadi 500 agar sangat aman di 16GB
-    
+    cfg.num_queries = 500 
     model = RTDetrForObjectDetection(config=cfg) if version=="v1" else RTDetrV2ForObjectDetection(config=cfg)
     pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version=="v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
     model.load_state_dict({k: v for k, v in pretrained.state_dict().items() if 'backbone' in k}, strict=False)
-    
     model.model.gradient_checkpointing_enable()
     for p in model.parameters(): p.requires_grad = True
-    
     del pretrained; gc.collect()
     return model.to(device)
 
@@ -104,27 +100,30 @@ def validate_and_evaluate(model, loader, device, val_json_path, version):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("version", choices=["v1", "v2"])
-    parser.add_argument("--gpu", type=int, default=0, help="ID GPU")
+    parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=150)
     args = parser.parse_args(); DEVICE = torch.device(f"cuda:{args.gpu}")
     
     run_name = f"unfrozen_dptext_{args.version}"
-    writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, run_name))
+    csv_path = os.path.join(LOG_DIR, f"{run_name}.csv")
     print(f"🚀 Menjalankan {run_name} di {DEVICE}")
+    
+    with open(csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Epoch', 'Train_Loss', 'mAP_50_95_EMA', 'Learning_Rate'])
     
     train_loader = DataLoader(CustomCocoDetection(DATA_ROOT_TRAIN, ANN_FILE_TRAIN, dptext_transform), batch_size=PHYSICAL_BATCH_SIZE, shuffle=True, collate_fn=collate_fn, num_workers=8)
     val_loader = DataLoader(CustomCocoDetection(DATA_ROOT_VAL, ANN_FILE_VAL, val_transform), batch_size=PHYSICAL_BATCH_SIZE, collate_fn=collate_fn, num_workers=8)
 
     model = build_model(args.version, DEVICE)
     optimizer = torch.optim.AdamW([{"params":[p for n,p in model.named_parameters() if "backbone" not in n], "lr":LR}, {"params":[p for n,p in model.named_parameters() if "backbone" in n], "lr":LR*0.1}], weight_decay=1e-4)
-    scaler = torch.amp.GradScaler('cuda')
-    ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
+    scaler = torch.amp.GradScaler('cuda'); ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
     scheduler = SequentialLR(optimizer, [LinearLR(optimizer,0.01,5), CosineAnnealingLR(optimizer, args.epochs-5,1e-6)], [5])
     early_stopper = EarlyStopping(patience=30)
 
     best_map, epoch = 0.0, 1
     while epoch <= args.epochs:
-        model.train(); optimizer.zero_grad()
+        model.train(); total_loss = 0; optimizer.zero_grad()
         pb = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Ep {epoch}/{args.epochs}")
         for i, (images, targets, _, sizes) in pb:
             images = images.to(DEVICE); targets = prepare_targets(targets, sizes, DEVICE)
@@ -132,20 +131,26 @@ def main():
             scaler.scale(loss).backward()
             if (i+1) % GRAD_ACCUM_STEPS == 0:
                 scaler.unscale_(optimizer); torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
-                scaler.step(optimizer); scaler.update(); optimizer.zero_grad()
-                ema_model.update_parameters(model)
+                scaler.step(optimizer); scaler.update(); optimizer.zero_grad(); ema_model.update_parameters(model)
+            total_loss += loss.item() * GRAD_ACCUM_STEPS
             pb.set_postfix({"loss": f"{loss.item() * GRAD_ACCUM_STEPS:.4f}"})
             
+        avg_loss = total_loss / len(train_loader)
         mAP = validate_and_evaluate(ema_model.module, val_loader, DEVICE, ANN_FILE_VAL, args.version)
-        print(f"📈 Ep {epoch} | mAP (EMA): {mAP:.4f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
-        writer.add_scalar('Metrics/mAP_50_95', mAP, epoch); scheduler.step()
+        cur_lr = optimizer.param_groups[0]['lr']
+        
+        print(f"📈 Ep {epoch} | T_Loss: {avg_loss:.4f} | mAP (EMA): {mAP:.4f} | LR: {cur_lr:.6f}")
+        
+        with open(csv_path, 'a', newline='') as f:
+            csv.writer(f).writerow([epoch, round(avg_loss, 4), round(mAP, 4), cur_lr])
+            
+        scheduler.step()
         
         if mAP > best_map: 
             best_map = mAP; torch.save(ema_model.module.state_dict(), f"{CHECKPOINT_DIR}/{run_name}_best.pth")
             print(f"🏆 Best mAP baru: {best_map:.4f} - Tersimpan!")
             
-        if early_stopper(mAP, epoch): print("🛑 Early Stopping aktif!"); break
+        if early_stopper(mAP, epoch): break
         epoch += 1
-    writer.close()
 
 if __name__ == "__main__": main()
