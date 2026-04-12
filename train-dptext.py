@@ -69,7 +69,7 @@ def build_model(version, device):
     print(f"🛠️ Membangun Model DPText UNFROZEN: {version.upper()}")
     cfg_base = "PekingU/rtdetr_r50vd" if version == "v1" else "PekingU/rtdetr_v2_r50vd"
     cfg = RTDetrConfig.from_pretrained(cfg_base, num_labels=NUM_CLASSES) if version=="v1" else RTDetrV2Config.from_pretrained(cfg_base, num_labels=NUM_CLASSES)
-    cfg.num_queries = 500 
+    cfg.num_queries = 1000
     model = RTDetrForObjectDetection(config=cfg) if version=="v1" else RTDetrV2ForObjectDetection(config=cfg)
     pretrained = RTDetrForObjectDetection.from_pretrained(cfg_base) if version=="v1" else RTDetrV2ForObjectDetection.from_pretrained(cfg_base)
     model.load_state_dict({k: v for k, v in pretrained.state_dict().items() if 'backbone' in k}, strict=False)

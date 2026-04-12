@@ -24,7 +24,7 @@ def load_smart_model(ckpt_path, device):
     
     # Deteksi Konfigurasi
     if "tcocr" in name: q = 1500
-    elif "dptext" in name: q = 500 # Sesuaikan dengan script train-dptext terakhir kita
+    elif "dptext" in name: q = 1000
     else: q = 300
         
     is_v2 = "v2" in name
