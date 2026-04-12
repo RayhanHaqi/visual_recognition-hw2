@@ -27,7 +27,7 @@ DATA_ROOT_VAL, ANN_FILE_VAL = "./datasets/valid", "./datasets/valid.json"
 CHECKPOINT_DIR, LOG_DIR = "./checkpoints", "./log"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
-IMG_SIZE, NUM_CLASSES, LR = 640, 10, 1e-4
+IMG_SIZE, NUM_CLASSES, LR = 640, 10, 5e-4
 
 PHYSICAL_BATCH_SIZE = 16
 GRAD_ACCUM_STEPS = 2
