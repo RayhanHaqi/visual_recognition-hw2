@@ -29,8 +29,8 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True); os.makedirs(LOG_DIR, exist_ok=True)
 
 IMG_SIZE, NUM_CLASSES, LR = 640, 10, 1e-4
 
-PHYSICAL_BATCH_SIZE = 8
-GRAD_ACCUM_STEPS = 4
+PHYSICAL_BATCH_SIZE = 16
+GRAD_ACCUM_STEPS = 2
 
 tcocr_transform = transforms.Compose([
     transforms.ColorJitter(brightness=0.2, contrast=0.2), 
