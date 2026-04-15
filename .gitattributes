@@ -1,0 +1,2 @@
+submission/*.zip filter=lfs diff=lfs merge=lfs -text
+checkpoints/*best.pth filter=lfs diff=lfs merge=lfs -text
