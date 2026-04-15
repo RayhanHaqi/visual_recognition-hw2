@@ -55,5 +55,5 @@ if [ -z "$RUNPOD_POD_ID" ]; then
     echo "ℹ️  RUNPOD_POD_ID tidak terdeteksi. Melewati proses penghapusan Pod (Mungkin kamu sedang di PC Lokal)."
 else
     echo "💥 Waktu habis! Menghapus Pod $RUNPOD_POD_ID..."
-    runpodctl pod delete $RUNPOD_POD_ID
+    runpodctl runpodctl remove pod $RUNPOD_POD_ID
 fi

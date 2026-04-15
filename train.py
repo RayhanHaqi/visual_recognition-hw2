@@ -14,31 +14,38 @@ class EarlyStopping:
     def __init__(self, patience=15, min_delta=0.001, warm_up=15, collapse_threshold=0.40):
         self.patience = patience
         self.min_delta = min_delta
-        self.warm_up = warm_up
-        self.collapse_threshold = collapse_threshold
+        self.warm_up = warm_up 
+        self.collapse_threshold = collapse_threshold 
         self.counter = 0
         self.best_score = None
         self.early_stop = False
 
     def __call__(self, current_score, epoch):
-        if epoch < self.warm_up: return False
-        if self.best_score is None:
+        # 1. SELALU CATAT REKOR TERTINGGI (Meskipun masih dalam masa warm-up)
+        if self.best_score is None or current_score > self.best_score:
             self.best_score = current_score
+            self.counter = 0  # Reset kesabaran jika rekor pecah
+        
+        # 2. JANGAN EKSEKUSI STOPPING JIKA MASIH WARM-UP
+        if epoch < self.warm_up: 
             return False
+        
+        # 3. SATPAM BERAKSI (Cek Kolaps)
+        # Sekarang dia membandingkan dengan rekor asli (0.46+), bukan skor ampas saat dia baru bangun
         if current_score < (self.collapse_threshold * self.best_score):
-            print(f"\n🚨 [EMERGENCY STOP] Epoch {epoch}: Model Collapse Detected!")
+            print(f"\n🚨 [EMERGENCY STOP] Epoch {epoch}: Model Collapse Detected (Skor hancur > 60%)!")
             self.early_stop = True
             return True
+            
+        # 4. SATPAM BERAKSI (Cek Stagnasi)
         if current_score < self.best_score + self.min_delta:
             self.counter += 1
             if self.counter >= self.patience:
-                print(f"\n🛑 [EARLY STOP] Epoch {epoch}: No improvement observed for {self.patience} epochs.")
+                print(f"\n⏹️ [EARLY STOP] Tidak ada perbaikan mAP selama {self.patience} epoch.")
                 self.early_stop = True
-        else:
-            self.best_score = current_score
-            self.counter = 0
-        return self.early_stop
-
+                return True
+                
+        return False
 # --- DATASET & COLLATOR ---
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
@@ -141,17 +148,7 @@ def main():
     val_loader = DataLoader(CustomCocoDetection(f"{args.data_path}/valid", f"{args.data_path}/valid.json", transform), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=args.workers)
 
     scheduler = OneCycleLR(optimizer, max_lr=args.lr, total_steps=args.epochs * len(train_loader), pct_start=0.2)
-    best_map, epoch, last_ckpt_path = 0.0, 1, f"{args.save_path}/{args.run_name}_last.pth"
-
-    # --- RESUME LOGIC ---
-    if os.path.exists(last_ckpt_path):
-        print(f"🔄 Resuming training from {last_ckpt_path}...")
-        ckpt = torch.load(last_ckpt_path, map_location=DEVICE, weights_only=False)
-        model.load_state_dict(ckpt['model_state_dict']); ema_model.load_state_dict(ckpt['ema_state_dict'])
-        optimizer.load_state_dict(ckpt['optimizer_state_dict']); scheduler.load_state_dict(ckpt['scheduler_state_dict'])
-        scaler.load_state_dict(ckpt['scaler_state_dict']); epoch = ckpt['epoch'] + 1; best_map = ckpt['best_map']
-        early_stopper.counter = ckpt.get('early_stop_counter', 0); early_stopper.best_score = ckpt.get('early_stop_best_score', best_map)
-        print(f"✅ Successfully loaded checkpoint. Resuming at Epoch {epoch} with Best mAP: {best_map:.4f}\n")
+    best_map, epoch = 0.0, 1
 
     while epoch <= args.epochs:
         try:
@@ -174,6 +171,8 @@ def main():
             if mAP > best_map:
                 print(f"🏆 NEW BEST MODEL! mAP improved from {best_map:.4f} to {mAP:.4f}. Saving checkpoint...")
                 best_map = mAP; torch.save(ema_model.module.state_dict(), f"{args.save_path}/{args.run_name}_best.pth")
+            else:
+                print(f"⏳ No improvement in mAP. Current Best: {best_map:.4f}.")
             
             # --- ATOMIC SAVING ---
             # last_state = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'ema_state_dict': ema_model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'scheduler_state_dict': scheduler.state_dict(), 'scaler_state_dict': scaler.state_dict(), 'best_map': best_map, 'early_stop_counter': early_stopper.counter, 'early_stop_best_score': early_stopper.best_score}
