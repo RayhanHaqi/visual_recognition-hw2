@@ -17,12 +17,11 @@ SUBMISSION_DIR = "./submission"
 os.makedirs(SUBMISSION_DIR, exist_ok=True)
 
 # ==========================================
-# 2. FUNGSI ROBUST MODEL LOADER (V2 DEFAULT)
+# 2. FUNGSI ROBUST MODEL LOADER
 # ==========================================
 def load_smart_model(ckpt_path, device, queries):
     name = os.path.basename(ckpt_path).lower()
     
-    # Langsung gunakan konfigurasi RT-DETR v2
     cfg_base = "PekingU/rtdetr_v2_r50vd"
     cfg = RTDetrV2Config.from_pretrained(cfg_base, num_labels=10)
     cfg.num_queries = queries
@@ -30,73 +29,73 @@ def load_smart_model(ckpt_path, device, queries):
         
     print(f"✅ Arsitektur: RT-DETR v2 | Queries: {queries}")
 
-    # --- LOGIKA REPAIR STATE DICT ---
     checkpoint = torch.load(ckpt_path, map_location='cpu', weights_only=False)
     state_dict = checkpoint.get('model_state_dict', checkpoint)
     
     new_state_dict = {}
     for k, v in state_dict.items():
-        # Kasus: File punya prefix 'model.model.' (akibat nested saving)
-        if k.startswith('model.model.'):
-            name_key = k[6:] 
-        # Kasus: File tidak punya prefix 'model.' padahal Transformers butuh
-        elif not k.startswith('model.'):
-            name_key = 'model.' + k
-        else:
-            name_key = k
-        new_state_dict[name_key] = v
+        if k.startswith('model.'): new_state_dict[k[6:]] = v
+        else: new_state_dict[k] = v
+            
+    model.model.load_state_dict(new_state_dict, strict=False)
+    model.to(device)
+    model.eval()
+    
+    return model, os.path.splitext(os.path.basename(ckpt_path))[0]
 
-    # Load dengan strict=False agar tidak crash karena layer statistik (running_mean dsb)
-    model.load_state_dict(new_state_dict, strict=False)
-    return model.to(device).eval(), name.split('.')[0]
-
+# ==========================================
+# 3. MAIN INFERENCE LOOP
+# ==========================================
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("ckpt", type=str, help="Path ke file .pth hasil training")
-    parser.add_argument("--queries", type=int, required=True, help="Wajib diisi! Jumlah kueri yang digunakan saat training (misal: 300, 1000, 1500)")
-    parser.add_argument("--gpu", type=str, default="0", help="ID GPU yang digunakan (misal: 0 atau 1)")
+    parser.add_argument("ckpt", help="Path ke file .pth hasil training")
+    parser.add_argument("--queries", type=int, required=True, help="Jumlah kueri (misal: 300, 1000, 1500)")
+    parser.add_argument("--gpu", type=str, default="0", help="ID GPU (misal: 0 atau 1)")
     args = parser.parse_args()
 
-    # Logika pemilihan device yang lebih robust
-    if torch.cuda.is_available():
-        DEVICE = torch.device(f"cuda:{args.gpu}")
-    else:
-        DEVICE = torch.device("cpu")
-        
+    DEVICE = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     print(f"🚀 Inference menggunakan device: {DEVICE}")
-    # Pass argument queries ke loader
+
     model, base_name = load_smart_model(args.ckpt, DEVICE, args.queries)
 
-    trans = transforms.Compose([
-        transforms.Resize((640, 640)), 
-        transforms.ToTensor(), 
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    val_transforms = transforms.Compose([
+        transforms.Resize((640, 640)),
+        transforms.ToTensor(),
     ])
 
     predictions = []
-    test_files = [f for f in os.listdir(TEST_IMG_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    
+    test_images = [f for f in os.listdir(TEST_IMG_DIR) if f.endswith('.jpg')]
+
     with torch.no_grad():
-        for img_name in tqdm(test_files, desc="Inference"):
-            img_id = int(os.path.splitext(img_name)[0])
+        for img_name in tqdm(test_images, desc="Inference"):
             img_path = os.path.join(TEST_IMG_DIR, img_name)
-            img_pil = Image.open(img_path).convert("RGB")
-            orig_w, orig_h = img_pil.size
+            img_id = int(os.path.splitext(img_name)[0])
             
-            input_tensor = trans(img_pil).unsqueeze(0).to(DEVICE)
+            image = Image.open(img_path).convert("RGB")
+            orig_w, orig_h = image.size
             
-            # with torch.amp.autocast('cuda'):
+            input_tensor = val_transforms(image).unsqueeze(0).to(DEVICE)
+            
             outputs = model(input_tensor)
             
             probs = outputs.logits[0].sigmoid()
             scores, labels = probs.max(dim=-1)
             
-            # Gunakan threshold rendah untuk memaksimalkan Recall di CodaBench
-            keep = scores > 0.01 
+            # --- PROTEKSI 1: THRESHOLD KETAT ---
+            # Buang tebakan ngawur, hanya ambil yang yakin > 15%
+            keep = scores > 0.15 
             
             boxes = outputs.pred_boxes[0][keep]
             confidences = scores[keep]
             class_ids = labels[keep]
+
+            # --- PROTEKSI 2: TOP-K FILTERING ---
+            # COCO mAP akan hancur jika mengirim lebih dari 300 kotak per gambar
+            if len(confidences) > 300:
+                topk_indices = confidences.topk(300)[1]
+                boxes = boxes[topk_indices]
+                confidences = confidences[topk_indices]
+                class_ids = class_ids[topk_indices]
 
             for box, score, label in zip(boxes, confidences, class_ids):
                 cx, cy, nw, nh = box.tolist()
@@ -115,11 +114,10 @@ def main():
     json_path = os.path.join(SUBMISSION_DIR, json_name)
     with open(json_path, 'w') as f: json.dump(predictions, f)
 
-    # Zip file sesuai format yang diminta CodaBench
     zip_path = os.path.join(SUBMISSION_DIR, f"submission_{base_name}.zip")
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
-        z.write(json_path, json_name)
-    
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write(json_path, json_name)
+        
     os.remove(json_path)
     print(f"🎉 Submission siap: {zip_path}")
 

@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # --- EARLY STOPPING LOGIC ---
 class EarlyStopping:
-    def __init__(self, patience=15, min_delta=0.001, warm_up=10, collapse_threshold=0.75):
+    def __init__(self, patience=15, min_delta=0.001, warm_up=15, collapse_threshold=0.40):
         self.patience = patience
         self.min_delta = min_delta
         self.warm_up = warm_up
@@ -108,7 +108,7 @@ def main():
         with open(csv_path, 'w', newline='') as f:
             csv.writer(f).writerow(['Epoch', 'Train_Loss', 'Val_Loss', 'mAP_50_95', 'mAP_50', 'LR'])
 
-    # --- UNIFIED AUGMENTATION (DPText Style) ---
+    # --- UNIFIED AUGMENTATION ---
     transform = transforms.Compose([
         transforms.Resize((640, 640)),
         transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
@@ -135,7 +135,7 @@ def main():
     optimizer = torch.optim.AdamW(param_dicts, weight_decay=args.wd)
     scaler = torch.amp.GradScaler('cuda')
     ema_model = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(0.999))
-    early_stopper = EarlyStopping(patience=15, warm_up=10)
+    early_stopper = EarlyStopping()
 
     train_loader = DataLoader(CustomCocoDetection(f"{args.data_path}/train", f"{args.data_path}/train.json", transform), batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn, num_workers=args.workers) 
     val_loader = DataLoader(CustomCocoDetection(f"{args.data_path}/valid", f"{args.data_path}/valid.json", transform), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=args.workers)
