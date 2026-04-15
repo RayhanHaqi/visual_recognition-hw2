@@ -1,4 +1,3 @@
-# Pustaka Inti untuk RT-DETR dan Vision
 scipy
 transformers
 pycocotools
@@ -6,12 +5,10 @@ opencv-python
 matplotlib
 pyyaml
 
-# Pustaka untuk Training Loop & Monitoring
 tqdm
 pandas
 requests
 gdown
 
-# Pustaka Tambahan (Sering dibutuhkan untuk augmentasi)
 albumentations
 scikit-learn
