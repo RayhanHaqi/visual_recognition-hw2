@@ -126,6 +126,7 @@ def main():
     ])
 
     config = RTDetrV2Config.from_pretrained("PekingU/rtdetr_v2_r50vd", num_labels=10, num_queries=args.queries)
+    # config.eos_coefficient = 0.0005
     model = RTDetrV2ForObjectDetection.from_pretrained("PekingU/rtdetr_v2_r50vd", config=config, ignore_mismatched_sizes=True).to(DEVICE)
     
     # --- RESET WEIGHTS (Train Transformer from Scratch) ---
