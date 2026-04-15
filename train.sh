@@ -42,16 +42,9 @@ rm -rf ./checkpoints/*.pth && \
 # 3. Git Push yang Aman (Parallel-Safe)
 echo "⏳ [3/3] Menyimpan ke GitHub secara aman..."
 
-# a. Tarik dulu perubahan terbaru dari GitHub (jaga-jaga model lain udah push duluan)
-git pull origin master --rebase
-
-# b. HANYA masukkan file spesifik milik run ini (jangan pakai -A)
-# Asumsi file submission dan log memiliki nama $RUN_NAME
-git add *${RUN_NAME}*.zip
-git add *${RUN_NAME}*.csv
-
-# c. Commit dan Push tanpa --force
+git add -A
 git commit -m "Auto-save: Done training $RUN_NAME"
+git pull origin master --rebase
 git push origin master
 
 echo "🎉 PIPELINE SELESAI!"
