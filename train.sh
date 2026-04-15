@@ -9,6 +9,7 @@ BS=${2:-24}        # Argumen 2: Batch Size (Default: 24)
 LR=${3:-5e-5}      # Argumen 3: Learning Rate (Default: 5e-5)
 WD=${4:-5e-4}      # Argumen 4: Weight Decay (Default: 5e-4)
 GPU=${5:-0}       # Argumen 5: GPU ID (Default: 0)
+WORKER=${6:-6}    # Argumen 6: Number of Workers (Default: 6)
 
 RUN_NAME="q${Q}_bs${BS}_lr${LR}_wd${WD}"
 
@@ -24,8 +25,8 @@ python train.py \
   --lr $LR \
   --wd $WD \
   --epochs 30 \
-  --workers 12 \
   --gpu $GPU \
+  --workers $WORKER \
   --run_name $RUN_NAME && \
 
 # 2. Inference / Submission
