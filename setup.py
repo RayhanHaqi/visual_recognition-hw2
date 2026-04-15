@@ -118,6 +118,18 @@ def setup_environment():
     # Memanggil konfigurasi Git LFS & OS
     setup_git_credentials()
 
+    # --- FUNGSI BARU: CHMOD +X UNTUK SCRIPT BASH ---
+    print("\n📜 6. Memeriksa script eksekusi (train.sh)...")
+    script_name = "train.sh"
+    if os.path.exists(script_name):
+        try:
+            subprocess.run(["chmod", "+x", script_name], check=True)
+            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
+    else:
+        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
+
     print("\n🎉 Setup Selesai! Kamu siap jalankan training.")
 
 if __name__ == "__main__":
