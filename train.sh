@@ -24,7 +24,7 @@ python train.py \
   --batch_size $BS \
   --lr $LR \
   --wd $WD \
-  --epochs 30 \
+  --epochs 50 \
   --gpu $GPU \
   --workers $WORKER \
   --run_name $RUN_NAME && \
