@@ -16,26 +16,8 @@ def check_dataset_exists(extract_dir):
     return os.path.exists(train_json) and os.path.exists(valid_json)
 
 def setup_git_credentials():
-    print("\n🔧 5. Mengatur Konfigurasi Kredensial & LFS Git...")
+    print("\n🔧 5. Mengatur Konfigurasi Kredensial Git...")
     
-    # --- 1. INSTALASI GIT-LFS DI SISTEM OPERASI (Khusus RunPod/Ubuntu) ---
-    print("   📦 Memastikan paket git-lfs terinstal di tingkat OS...")
-    try:
-        # Mencegah prompt interaktif yang bikin script nyangkut
-        env = os.environ.copy()
-        env["DEBIAN_FRONTEND"] = "noninteractive"
-        
-        # Cek apakah butuh "sudo" (RunPod kadang root, kadang butuh sudo)
-        use_sudo = ["sudo"] if subprocess.run(["which", "sudo"], capture_output=True).returncode == 0 else []
-        
-        # Jalankan apt update & apt install -y
-        subprocess.run(use_sudo + ["apt-get", "update"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
-        subprocess.run(use_sudo + ["apt-get", "install", "-y", "git-lfs"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
-        print("   ✅ Paket git-lfs sistem berhasil disiapkan.")
-    except Exception as e:
-        print(f"   ⚠️ Gagal menginstal git-lfs OS (Abaikan jika sudah ada): {e}")
-
-    # --- 2. KONFIGURASI GIT & AKTIVASI LFS ---
     try:
         # Identitas & Credential Helper
         subprocess.run(["git", "config", "--global", "user.email", "RayhanHaqi@github.com"], check=True)
@@ -43,12 +25,6 @@ def setup_git_credentials():
         subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
         print("   ✅ Identitas Git & Credential Helper berhasil diset.")
         
-        # Aktivasi LFS di repository/user ini
-        subprocess.run(["git", "lfs", "install"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("   ✅ Git LFS berhasil diinisialisasi dan siap digunakan.")
-        
-    except FileNotFoundError:
-        print("   ⚠️ Git belum terpasang di sistem ini.")
     except subprocess.CalledProcessError as e:
         print(f"   ❌ Terjadi kesalahan saat konfigurasi Git: {e}")
 

@@ -174,13 +174,10 @@ def main():
             else:
                 print(f"⏳ No improvement in mAP. Current Best: {best_map:.4f}.")
             
-            # --- ATOMIC SAVING ---
-            # last_state = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'ema_state_dict': ema_model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'scheduler_state_dict': scheduler.state_dict(), 'scaler_state_dict': scaler.state_dict(), 'best_map': best_map, 'early_stop_counter': early_stopper.counter, 'early_stop_best_score': early_stopper.best_score}
-            # tmp_path = last_ckpt_path + ".tmp"; torch.save(last_state, tmp_path); os.replace(tmp_path, last_ckpt_path)
-            
             if early_stopper(mAP, epoch): break
             epoch += 1
-            print("-" * 60)
+            print("-" * 100)
+            print("-" * 100)
             
         except RuntimeError as e:
             if "out of memory" in str(e).lower():

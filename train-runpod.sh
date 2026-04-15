@@ -35,6 +35,10 @@ python submission.py \
   --queries $Q \
   ./checkpoints/${RUN_NAME}_best.pth && \
 
+# --- FASE BARU: PEMBERSIHAN ---
+echo "🧹 [EXTRA] Menghapus file checkpoint raksasa (.pth)..."
+rm -rf ./checkpoints/*.pth && \
+
 # 3. Git Push
 echo "⏳ [3/3] Menyimpan ke GitHub..."
 git add -A && \
