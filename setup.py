@@ -130,6 +130,16 @@ def setup_environment():
     else:
         print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
 
+    script_name = "train-runpod.sh"
+    if os.path.exists(script_name):
+        try:
+            subprocess.run(["chmod", "+x", script_name], check=True)
+            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
+    else:
+        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
+
     print("\n🎉 Setup Selesai! Kamu siap jalankan training.")
 
 if __name__ == "__main__":
