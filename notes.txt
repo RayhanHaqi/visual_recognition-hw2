@@ -7,3 +7,23 @@ pip uninstall torch torchvision torchaudio -y
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 
 ssh ai@140.113.149.93
+
+Berdasarkan file log terakhir yang baru saja kamu jalankan, ini adalah racikan Learning Rate (LR) dan Weight Decay (WD) yang kamu pakai:
+
+q1000 (Batch Size 24):
+
+LR: 5e-5
+
+WD: 5e-4
+
+q1500 (Batch Size 24):
+
+LR: 4e-5
+
+WD: 1e-3
+
+q300 (Local PC, Batch Size 16):
+
+LR: 5e-5
+
+WD: 1e-4

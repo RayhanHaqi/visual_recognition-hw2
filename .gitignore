@@ -3,3 +3,4 @@ datasets/
 checkpoints/*last.pth
 *.pth
 checkpoints/
+sanity_check.py
