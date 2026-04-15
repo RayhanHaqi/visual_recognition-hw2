@@ -1,3 +1,5 @@
 datasets/
 *.json
 checkpoints/*last.pth
+*.pth
+checkpoints/
