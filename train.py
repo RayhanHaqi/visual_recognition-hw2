@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 
 # --- EARLY STOPPING LOGIC ---
 class EarlyStopping:
-    def __init__(self, patience=15, min_delta=0.001, warm_up=15, collapse_threshold=0.40):
+    def __init__(self, patience=15, min_delta=0.001, warm_up=10, collapse_threshold=0.40):
         self.patience = patience
         self.min_delta = min_delta
         self.warm_up = warm_up 
@@ -117,7 +117,7 @@ def main():
 
     # --- UNIFIED AUGMENTATION ---
     transform = transforms.Compose([
-        transforms.Resize((640, 640)),
+        transforms.Resize((320, 640)),
         transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
         transforms.RandomGrayscale(p=0.2),
         transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
