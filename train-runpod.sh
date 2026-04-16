@@ -11,7 +11,7 @@ WD=${4:-5e-4}      # Argumen 4: Weight Decay (Default: 5e-4)
 GPU=${5:-0}       # Argumen 5: GPU ID (Default: 0)
 WORKER=${6:-6}    # Argumen 6: Number of Workers (Default: 6)
 
-RUN_NAME="q${Q}_bs${BS}_lr${LR}_wd${WD}"
+RUN_NAME="q${Q}_bs${BS}_lr${LR}_wd${WD}_runpod"
 
 echo "=================================================="
 echo "🚀 MEMULAI PIPELINE: $RUN_NAME"
