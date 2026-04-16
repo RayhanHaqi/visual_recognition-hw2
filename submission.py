@@ -92,7 +92,7 @@ def main():
             scores, labels = probs.max(dim=-1)
             
             # Gunakan threshold rendah untuk memaksimalkan Recall di CodaBench
-            keep = scores > 0.01 
+            keep = scores > 0.15 
             
             boxes = outputs.pred_boxes[0][keep]
             confidences = scores[keep]
