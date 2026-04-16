@@ -23,7 +23,7 @@ def install_pigz():
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("   ⏳ pigz belum terpasang. Menginstal pigz untuk ekstraksi super cepat...")
         try:
-            subprocess.run(["apt-get", "update", "-y"], check=False, stdout=subprocess.DEVNULL)
+            # subprocess.run(["apt-get", "update", "-y"], check=False, stdout=subprocess.DEVNULL)
             subprocess.run(["apt-get", "install", "-y", "pigz"], check=True, stdout=subprocess.DEVNULL)
             print("   ✅ pigz berhasil diinstal!")
         except Exception as e:
