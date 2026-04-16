@@ -16,7 +16,7 @@ def check_dataset_exists(extract_dir):
     return os.path.exists(train_json) and os.path.exists(valid_json)
 
 def setup_git_credentials():
-    print("\n🔧 5. Mengatur Konfigurasi Kredensial Git...")
+    print("\n🔧 5. Mengatur Konfigurasi Kredensial Git & LFS...")
     
     try:
         # Identitas & Credential Helper
@@ -25,8 +25,14 @@ def setup_git_credentials():
         subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
         print("   ✅ Identitas Git & Credential Helper berhasil diset.")
         
+        # LFS Setup & Pull
+        subprocess.run(["git", "lfs", "install"], check=True)
+        # Menarik file LFS asli jika repositori baru saja di-clone
+        subprocess.run(["git", "lfs", "pull"], check=False) # check=False karena kalau blm ada commit lfs bisa error
+        print("   ✅ Git LFS berhasil diinisialisasi dan siap digunakan.")
+        
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Terjadi kesalahan saat konfigurasi Git: {e}")
+        print(f"   ❌ Terjadi kesalahan saat konfigurasi Git/LFS: {e}")
 
 def setup_environment():
     extract_dir = "datasets"

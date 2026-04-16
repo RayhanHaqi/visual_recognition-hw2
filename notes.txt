@@ -27,3 +27,14 @@ q300 (Local PC, Batch Size 16):
 LR: 5e-5
 
 WD: 1e-4
+
+
+
+
+q1500_bs24_lr5e5_wd1e3_log.csv 
+q1000_bs24_lr1e4_wd5e4_log.csv 
+q300_bs16_wd5e4_log.csv 
+q1000_bs24_wd5e4_log.csv 
+q1500_bs24_lr8e5_wd1e3_log.csv 
+q1500_bs24_wd5e4_log.csv 
+
