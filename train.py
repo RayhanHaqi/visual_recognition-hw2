@@ -102,6 +102,7 @@ def main():
     parser.add_argument("--queries", type=int, default=300)
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--workers", type=int, default=8, )
+    parser.add_argument("--eof", type=float, default=0.0001)
     parser.add_argument("--data_path", type=str, default="./datasets")
     parser.add_argument("--save_path", type=str, default="./checkpoints")
     args = parser.parse_args()
@@ -126,7 +127,7 @@ def main():
     ])
 
     config = RTDetrV2Config.from_pretrained("PekingU/rtdetr_v2_r50vd", num_labels=10, num_queries=args.queries)
-    config.eos_coefficient = 0.005
+    config.eos_coefficient = args.eof
     model = RTDetrV2ForObjectDetection.from_pretrained("PekingU/rtdetr_v2_r50vd", config=config, ignore_mismatched_sizes=True).to(DEVICE)
     
     # --- RESET WEIGHTS (Train Transformer from Scratch) ---

@@ -10,8 +10,9 @@ LR=${3:-5e-5}      # Argumen 3: Learning Rate (Default: 5e-5)
 WD=${4:-5e-4}      # Argumen 4: Weight Decay (Default: 5e-4)
 GPU=${5:-0}       # Argumen 5: GPU ID (Default: 0)
 WORKER=${6:-6}    # Argumen 6: Number of Workers (Default: 6)
+EOF=${7:-0.0001}  # Argumen 7: EOS Coefficient (Default: 0.0001)
 
-RUN_NAME="q${Q}_bs${BS}_lr${LR}_wd${WD}_runpod"
+RUN_NAME="q${Q}_bs${BS}_lr${LR}_wd${WD}_eof${EOF}_runpod"
 
 echo "=================================================="
 echo "🚀 MEMULAI PIPELINE: $RUN_NAME"
@@ -27,6 +28,7 @@ python train.py \
   --epochs 50 \
   --gpu $GPU \
   --workers $WORKER \
+  --eof $EOF \
   --run_name $RUN_NAME && \
 
 # 2. Inference / Submission
