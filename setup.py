@@ -1,19 +1,26 @@
 import os
 import subprocess
-import tarfile
 from pathlib import Path
-
-# Coba import tqdm, jika belum ada install otomatis
-try:
-    from tqdm import tqdm
-except ImportError:
-    subprocess.run(["pip", "install", "-q", "tqdm"])
-    from tqdm import tqdm
 
 def check_dataset_exists(extract_dir):
     train_json = os.path.join(extract_dir, "train.json")
     valid_json = os.path.join(extract_dir, "valid.json")
     return os.path.exists(train_json) and os.path.exists(valid_json)
+
+def install_pigz():
+    print("\n⚡ Mengecek ketersediaan pigz (Parallel GZIP)...")
+    try:
+        subprocess.run(["pigz", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        print("   ✅ pigz sudah terpasang.")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("   ⏳ pigz belum terpasang. Menginstal pigz untuk ekstraksi super cepat...")
+        try:
+            # Mencoba install menggunakan apt (untuk Debian/Ubuntu Linux seperti RunPod)
+            subprocess.run(["apt-get", "update", "-y"], check=False, stdout=subprocess.DEVNULL)
+            subprocess.run(["apt-get", "install", "-y", "pigz"], check=True)
+            print("   ✅ pigz berhasil diinstal!")
+        except Exception as e:
+            print(f"   ⚠️ Gagal menginstal pigz secara otomatis. Akan mencoba fallback. Error: {e}")
 
 def setup_git_credentials():
     print("\n🔧 5. Mengatur Konfigurasi Kredensial Git & LFS...")
@@ -29,100 +36,56 @@ def setup_git_credentials():
         subprocess.run(["git", "lfs", "install"], check=True)
         # Menarik file LFS asli jika repositori baru saja di-clone
         subprocess.run(["git", "lfs", "pull"], check=False) # check=False karena kalau blm ada commit lfs bisa error
-        print("   ✅ Git LFS berhasil diinisialisasi dan siap digunakan.")
-        
+        print("   ✅ Git LFS siap digunakan.")
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Terjadi kesalahan saat konfigurasi Git/LFS: {e}")
+        print(f"   ❌ Gagal mengatur kredensial Git: {e}")
 
-def setup_environment():
+if __name__ == "__main__":
+    print("==================================================")
+    print("🚀 MEMULAI SETUP ENVIRONMENT DETEKSI DIGIT")
+    print("==================================================")
+
+    # Direktori target ekstraksi
     extract_dir = "datasets"
-    dataset_tar = "nycu-hw2-data.tar.gz"
-    url = "https://drive.google.com/file/d/13JXJ_hIdcloC63sS-vF3wFQLsUP1sMz5/view"
+    dataset_tar = "datasets.tar.gz"
 
-    print("=======================================")
-    print("🚀 AUTOMATIC ENVIRONMENT SETUP")
-    print("=======================================\n")
-
-    print("📦 1. Memeriksa dependencies...")
-    try:
-        subprocess.run(["pip", "install", "-q", "-r", "requirements.txt"], check=True)
-    except subprocess.CalledProcessError:
-        pass
-
-    print("\n🔍 2. Memeriksa keberadaan Dataset...")
     if check_dataset_exists(extract_dir):
-        print("   ✅ Dataset lengkap! Melewati Download & Ekstraksi.")
+        print(f"\n📦 Dataset sudah ada dan lengkap di folder '{extract_dir}'. Melewati ekstraksi.")
     else:
-        print("   ⚠️ Dataset belum lengkap. Memulai Download...")
-        
-        # --- DOWNLOAD ---
         if not os.path.exists(dataset_tar):
-            print("\n⬇️ 3. Mengunduh dataset...")
-            subprocess.run(["gdown", url], check=True)
+            print(f"\n❌ File {dataset_tar} tidak ditemukan! Pastikan file LFS sudah di-pull.")
         else:
-            print(f"   ✅ File {dataset_tar} sudah ada, lanjut ke ekstraksi.")
-
-        # --- EKSTRAKSI DENGAN PROGRESS BAR ---
-        print(f"\n🗜️ 4. Mempersiapkan Ekstraksi (Membaca index file tar)...")
-        os.makedirs(extract_dir, exist_ok=True)
-
-        try:
-            with tarfile.open(dataset_tar, "r:gz") as tar:
-                all_members = tar.getmembers()
-                members_to_extract = []
+            # Pastikan pigz terinstal
+            install_pigz()
+            
+            print(f"\n📦 Mengekstrak {dataset_tar} menggunakan pigz (Multi-core Extraction)...")
+            os.makedirs(extract_dir, exist_ok=True)
+            try:
+                # Menggunakan tar dengan command -I pigz untuk dekompresi paralel
+                subprocess.run(["tar", "-I", "pigz", "-xf", dataset_tar, "-C", extract_dir], check=True)
                 
-                for member in all_members:
-                    parts = Path(member.name).parts
-                    if len(parts) > 1:
-                        member.name = str(Path(*parts[1:]))
-                        
-                        dest_path = os.path.abspath(os.path.join(extract_dir, member.name))
-                        if not dest_path.startswith(os.path.abspath(extract_dir)):
-                            continue
+                print("\n   ✅ Ekstraksi selesai dengan sukses dan cepat!")
+                os.remove(dataset_tar)
+                print("   🧹 File .tar.gz telah dihapus untuk menghemat ruang.")
 
-                        member.uid = 0; member.gid = 0
-                        member.uname = "root"; member.gname = "root"
-                        members_to_extract.append(member)
-
-                print(f"   📦 Menemukan {len(members_to_extract)} file. Memulai ekstraksi...")
-                
-                # INI DIA MAGIC-NYA: PROGRESS BAR
-                for member in tqdm(members_to_extract, desc="Mengekstrak", unit="file"):
-                    tar.extract(member, path=extract_dir)
-                
-            print("\n   ✅ Ekstraksi selesai dengan sukses!")
-            os.remove(dataset_tar)
-            print("   🧹 File .tar.gz telah dihapus.")
-
-        except Exception as e:
-            print(f"\n   ❌ Terjadi kesalahan saat ekstraksi: {e}")
+            except Exception as e:
+                print(f"\n   ❌ Terjadi kesalahan saat ekstraksi dengan pigz: {e}")
 
     # Memanggil konfigurasi Git LFS & OS
     setup_git_credentials()
 
     # --- FUNGSI BARU: CHMOD +X UNTUK SCRIPT BASH ---
-    print("\n📜 6. Memeriksa script eksekusi (train.sh)...")
-    script_name = "train.sh"
-    if os.path.exists(script_name):
-        try:
-            subprocess.run(["chmod", "+x", script_name], check=True)
-            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
-        except subprocess.CalledProcessError as e:
-            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
-    else:
-        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
+    print("\n📜 6. Memeriksa script eksekusi (train.sh & train-runpod.sh)...")
+    
+    scripts = ["train.sh", "train-runpod.sh"]
+    for script_name in scripts:
+        if os.path.exists(script_name):
+            try:
+                subprocess.run(["chmod", "+x", script_name], check=True)
+                print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
+            except subprocess.CalledProcessError as e:
+                print(f"   ❌ Gagal menambahkan izin eksekusi ke {script_name}: {e}")
+        else:
+            print(f"   ℹ️ Script {script_name} belum ada, melewati tahap chmod.")
 
-    script_name = "train-runpod.sh"
-    if os.path.exists(script_name):
-        try:
-            subprocess.run(["chmod", "+x", script_name], check=True)
-            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
-        except subprocess.CalledProcessError as e:
-            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
-    else:
-        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
-
-    print("\n🎉 Setup Selesai! Kamu siap jalankan training.")
-
-if __name__ == "__main__":
-    setup_environment()
+    print("\n🎉 SETUP SELESAI! Kamu siap melakukan training.")
