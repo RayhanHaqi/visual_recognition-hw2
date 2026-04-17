@@ -3,4 +3,7 @@ datasets/
 checkpoints/*last.pth
 *.pth
 checkpoints/
+submission/
+report/
+notes.txt
 sanity_check.py
