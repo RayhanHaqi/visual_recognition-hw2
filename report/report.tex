@@ -4,11 +4,11 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{geometry}
-\geometry{top=2.5cm}
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm}
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
 \usepackage{hyperref}
-\usepackage{booktabs}
+\usepackage{cite}
 \usepackage{setspace}
 \onehalfspacing
 
@@ -17,81 +17,113 @@
     linkcolor=blue,
     filecolor=magenta,      
     urlcolor=blue,
+    citecolor=blue,
 }
 
 % --- Document Identity ---
 \title{\textbf{Visual Recognition using Deep Learning}\\ \large Homework 2: Digit Detection Problem}
 \author{
     Muhammad Rayhan Athaillah \\ 
-    \small Student ID: 313540001 \\ 
+    \small Student ID: [Your ID] \\ 
+    \small National Yang Ming Chiao Tung University
 }
-\date{April 2026}
+\date{\today}
 
 \begin{document}
 
 \maketitle
 
-\begin{abstract}
-
-\end{abstract}
-
 \vspace{0.5cm}
-\noindent \textbf{GitHub Repository:} \href{https://github.com/RayhanHaqi/visual\_recognition-hw2}{https://github.com/RayhanHaqi/visual\_recognition-hw2}
+\noindent \textbf{GitHub Repository:} \href{https://github.com/RayhanHaqi/[Your-Repo]}{https://github.com/RayhanHaqi/[Your-Repo]}
 
+% ==========================================
+% 1. INTRODUCTION
+% ==========================================
 \section{Introduction}
-The Digit Detection Problem presents a unique challenge in the domain of visual recognition, requiring a model capable of accurately localizing and classifying dense numbers within varied backgrounds. Furthermore, the dataset provided for this task contains images with extreme widescreen dimensions, posing a significant challenge to standard object detection pipelines optimized for square aspect ratios.
+This report outlines the technical implementation for the Digit Detection Problem (Homework 2) within the Visual Recognition using Deep Learning course[cite: 4, 10]. The objective is to design a robust object detection pipeline capable of identifying and localizing multiple digits in varied RGB images[cite: 145, 148]. 
 
-To tackle this problem, this project utilizes the Real-Time DEtection TRansformer v2 (RT-DETRv2). Historically, real-time object detection has been dominated by CNN-based architectures like the YOLO family. While highly efficient, these traditional models rely heavily on anchor boxes and heuristic post-processing steps like Non-Maximum Suppression (NMS) to filter out redundant bounding boxes. NMS introduces latency and often struggles in highly dense environments where objects overlap.
-
-The paradigm shifted significantly with the introduction of the DEtection TRansformer (DETR). DETR revolutionized the field by casting object detection as a direct set prediction problem. By utilizing a Transformer encoder-decoder architecture and a bipartite matching loss, DETR completely eliminated the need for NMS, offering a highly deterministic approach to object localization. However, early iterations of DETR suffered from exceedingly slow training convergence and high computational overhead, especially when processing high-resolution images, making them unsuitable for real-time applications.
-
-The evolution from DETR to RT-DETR (and subsequently RT-DETRv2) bridged this gap. RT-DETRv2 introduces an efficient hybrid encoder that effectively processes multi-scale features while reducing computational redundancy. It achieves the real-time inference speeds of YOLO while retaining the NMS-free, high-accuracy characteristics of the original DETR architecture. This makes RT-DETRv2 exceptionally suited for the dense Digit Detection Problem.
-
-\section{Methodology}
-\subsection{Data Pre-Processing and Rectangular Training}
-An exploratory data analysis of the dataset revealed an average image resolution of approximately $60 \times 140$ pixels, yielding an aspect ratio of roughly $3:7$. Resizing these images to the default $640 \times 640$ resolution squashes the digits vertically by a factor of 10. To preserve the geometric integrity of the numbers, \textbf{Rectangular Training} was implemented. All images were resized to $320 \times 640$ during both training and validation. This maintains the natural proportions of the digits while fulfilling the neural network's requirement for dimensions to be multiples of 32.
-
-\subsection{Strategic Data Augmentation}
-To prevent altering the ground-truth bounding box coordinates, spatial/geometric augmentations (e.g., Random Horizontal Flip, Random Rotation) were strictly avoided. Instead, pixel-level augmentations were applied to increase model robustness:
+\subsection{Technical Constraints and Requirements}
+The assignment dictates a specific model architecture: the system must utilize the \textbf{DEtection TRansformer (DETR)} as the core model, paired exclusively with a \textbf{ResNet-50} backbone[cite: 163]. While the backbone is fixed, modifications to other components—such as the transformer encoder and decoder—are permitted[cite: 164]. The following constraints are strictly enforced:
 \begin{itemize}
-    \item \textbf{ColorJitter:} Randomly alters brightness, contrast, and saturation to simulate diverse lighting conditions.
-    \item \textbf{RandomErasing ($p=0.3$):} Randomly drops out rectangular pixel patches, forcing the model to learn digit features even under partial occlusion.
+    \item \textbf{Data Usage:} The use of external data from any outside source is strictly prohibited[cite: 165].
+    \item \textbf{Pretrained Weights:} Pretrained weights are allowed only for the ResNet-50 backbone[cite: 164].
+    \item \textbf{Submission Standards:} Final deliverables must include a ZIP file containing the source code (.py) and a PDF report written in English[cite: 21, 271, 277]. Inclusion of checkpoints or datasets in the submission is forbidden[cite: 279, 280].
+    \item \textbf{Academic Integrity:} A zero-tolerance policy for plagiarism is in effect, with severe penalties including failure of the course[cite: 287, 288].
+\end{itemize}
+
+% ==========================================
+% 2. LITERATURE REVIEW
+% ==========================================
+\section{Literature Review}
+
+\subsection{Architectural Evolution: From DETR to RT-DETRv2}
+The emergence of the DEtection TRansformer (DETR) introduced a paradigm shift by utilizing a bipartite matching loss and a transformer-based encoder-decoder to eliminate the need for hand-crafted components like Non-Maximum Suppression (NMS)[cite: 163, 164]. As proposed by Carion et al. \cite{carion2020}, DETR frames detection as a direct set prediction problem [1].
+
+% --- Placeholder Image DETR ---
+\begin{figure}[h]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{detr_arch.png}
+    \vspace{1cm} 
+    \caption{Architecture of the original DEtection TRansformer (DETR) [1].}
+    \label{fig:detr}
+\end{figure}
+
+Real-Time DETR (RT-DETR) later improved upon this by introducing an efficient hybrid encoder to handle multi-scale features, allowing the model to achieve speeds comparable to YOLO architectures while maintaining transformer accuracy \cite{lv2023} [2]. The latest iteration, \textbf{RT-DETRv2}, further optimizes this baseline by refining the backbone interaction and training stability, which is highly effective for dense detection tasks \cite{lv2024} [3].
+
+% --- Placeholder Image RT-DETRv2 ---
+\begin{figure}[h]
+    \centering
+    % \includegraphics[width=0.8\textwidth]{rtdetrv2_arch.png}
+    \vspace{1cm} 
+    \caption{The RT-DETRv2 architecture optimized for real-time performance [3].}
+    \label{fig:rtdetrv2}
+\end{figure}
+
+\subsection{Optimization and Regularization Strategies}
+Deep transformer training typically benefits from the \textbf{AdamW} optimizer \cite{loshchilov2017}, which improves generalization by decoupling weight decay from the gradient updates [4]. Within the DETR loss function, the \textbf{End-of-Sequence (\texttt{eos\_coef})} coefficient is vital for penalizing "no-object" (background) predictions. Tuning this penalty is essential to manage false positives and accommodate potential labeling noise in complex datasets.
+
+\subsection{Resolution Adaptation}
+Analysis of the provided dataset indicates a predominantly widescreen aspect ratio. Consequently, the input resolution is adapted to \textbf{$320 \times 640$} to align with the RT-DETRv2 architecture's requirements (multiples of 32) while preserving the natural geometry of the digits.
+
+% ==========================================
+% 3. METHODOLOGY
+% ==========================================
+\section{Methodology}
+
+\subsection{Preprocessing and Resolution Check}
+The initial preprocessing phase involved auditing the dataset resolution. To maintain spatial features without vertical distortion, images were resized to $320 \times 640$ pixels. This rectangular input ensures the model learns the correct aspect ratios of the digits.
+
+\subsection{Data Augmentation}
+To improve robustness without shifting bounding box coordinates, pixel-level augmentations were employed:
+\begin{itemize}
+    \item \textbf{ColorJitter:} Random adjustment of brightness, contrast, and saturation.
+    \item \textbf{RandomErasing:} Strategically masking image patches to simulate oclusions.
+\end{itemize}
+
+\subsection{Regularization and Training Scheme}
+Advanced regularization was implemented to ensure stable convergence:
+\begin{itemize}
+    \item \textbf{LR Scheduler:} The \textbf{OneCycleLR} scheduler was used to navigate the optimization landscape efficiently.
+    \item \textbf{EMA:} \textbf{Exponential Moving Average} of model weights was utilized to enhance the stability of final predictions.
 \end{itemize}
 
 \subsection{Hyper-parameter Experiments}
-To systematically determine the optimal configuration for the RT-DETRv2 architecture (ResNet-50 backbone), a series of empirical experiments were conducted across several key hyper-parameters using multiple GPUs training. 
-
+Systematic experiments were conducted using a Dual NVIDIA RTX 4090 setup, focusing on the following variables:
 \begin{itemize}
-    \item \textbf{Object Queries ($q$):} Unlike YOLO, DETR-based models predict a fixed set of queries. Given the dense nature of the digit clusters in the dataset, experiments were conducted comparing $q=300$, $q=1000$, and $q=1500$ to ensure the model had sufficient capacity to detect all instances without incurring unnecessary computational overhead.
-    \item \textbf{Learning Rate (LR) and Optimizer:} Using the AdamW optimizer with a OneCycleLR scheduler, base learning rates of $1 \times 10^{-4}$ and $5 \times 10^{-5}$ were tested to balance fast convergence and stable gradient descent.
-    \item \textbf{Weight Decay (WD):} To prevent the model from memorizing the training data (overfitting), weight decay coefficients were rigorously evaluated at $5 \times 10^{-4}$ and $1 \times 10^{-3}$.
+    \item \textbf{Object Queries ($q$):} Evaluation of $q=1000$ versus $q=1500$ to accommodate digit density.
+    \item \textbf{Weight Decay (WD):} Comparative testing between $1 \times 10^{-3}$ and $5 \times 10^{-4}$ for optimal regularization.
+    \item \textbf{Learning Rate (LR):} Tuning the base learning rate at $1 \times 10^{-4}$ to balance speed and accuracy.
 \end{itemize}
 
-\section{Results and Discussion}
-
-% --- BAGIAN BARU: GRAFIK DAN ANALISA EKSPERIMEN ---
-\subsection{Hyper-parameter Comparative Analysis}
-The training logs from the hyper-parameter experiments were extracted and plotted to rank the configurations based on Validation Loss convergence and Mean Average Precision (mAP@50-95). 
-
-\begin{figure}[h]
-    \centering
-    % Ganti 'nama_file_grafik.png' dengan nama file gambar grafikmu nanti
-    % \includegraphics[width=0.9\textwidth]{nama_file_grafik.png}
-    \caption{Comparative analysis of training and validation curves across different hyper-parameter configurations (Queries, LR, and Weight Decay).}
-    \label{fig:hyper_tuning}
-\end{figure}
-
-As illustrated in Figure \ref{fig:hyper_tuning}, the configuration utilizing $q=1000$, a learning rate of $1 \times 10^{-4}$, and a weight decay of $1 \times 10^{-3}$ demonstrated the most stable convergence. Increasing the queries to $1500$ did not yield a proportional increase in mAP, indicating that 1000 queries are sufficient for the maximum digit density present in the dataset.
-
-\subsection{Baseline Performance and the Overfitting Gap}
-Initial training runs utilizing the default $640 \times 640$ resolution achieved a strong local validation mAP of $0.47$. However, performance on the CodaBench test set consistently stalled at $0.40$. This $0.06$ gap strongly indicated an overfitting syndrome where the model behaved too aggressively, predicting numerous false positives on empty background regions.
-
-\subsection{Innovative Strategy 1: Strict Background Penalty (\texttt{eos\_coef})}
-To address the false positive issue, the End-of-Sequence coefficient (\texttt{eos\_coef} or No-Object Weight) in the bipartite matching loss was radically tuned. By increasing the \texttt{eos\_coef} from its default value of $0.0001$ to \textbf{$0.005$}, the model was subjected to a much stricter penalty for predicting objects in empty spaces. This forced the model to be highly confident before outputting a bounding box, acting as an effective filter against background noise and directly improving the Precision metric on the CodaBench evaluation.
-
-\subsection{Innovative Strategy 2: Efficiency via Aspect Ratio Preservation}
-The transition to Rectangular Training ($320 \times 640$) yielded a twofold advantage. First, it eliminated the geometric distortion, allowing the Transformer's attention mechanisms to learn the true shapes of the digits. Second, it reduced the computational load per epoch by 50\%, allowing for faster experimentation and the utilization of larger batch sizes ($BS=32$) without triggering Out-Of-Memory (OOM) errors.
-
-\section{Conclusion}
+% ==========================================
+% REFERENCES
+% ==========================================
+\newpage
+\begin{thebibliography}{99}
+\bibitem{carion2020} M. Carion et al., ``End-to-End Object Detection with Transformers,'' in \textit{Proc. ECCV}, 2020.
+\bibitem{lv2023} W. Lv et al., ``DETRs Beat YOLOs on Real-time Object Detection,'' in \textit{Proc. CVPR}, 2023.
+\bibitem{lv2024} W. Lv et al., ``RT-DETRv2: Improved Baseline with Faster Training and Better Generalization,'' \textit{arXiv:2407.17140}, 2024.
+\bibitem{loshchilov2017} I. Loshchilov and F. Hutter, ``Decoupled Weight Decay Regularization,'' in \textit{Proc. ICLR}, 2019.
+\end{thebibliography}
 
 \end{document}

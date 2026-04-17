@@ -91,7 +91,6 @@ def main():
             probs = outputs.logits[0].sigmoid()
             scores, labels = probs.max(dim=-1)
             
-            # Gunakan threshold rendah untuk memaksimalkan Recall di CodaBench
             keep = scores > 0.15 
             
             boxes = outputs.pred_boxes[0][keep]
