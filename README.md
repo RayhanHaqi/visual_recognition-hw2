@@ -60,14 +60,14 @@ There are two primary methods to execute training depending on your hardware env
 Best for single-GPU setups or debugging. This provides direct access to Python's error logs and single-process execution.
 
 ```bash
-python tools/train.py -c configs/rtdetrv2/rtdetrv2_r50vd_6x_coco.yml
+python train.py --run_name --batch_size --epochs --lr --wd --queries --gpu --workers --eof --data_path --save_path
 ```
 
 #### Option B: Using `train.sh` (Distributed Execution)
-Best for Multi-GPU setups (e.g., Dual RTX 4090). This script is a wrapper for `torch.distributed.run` to implement Distributed Data Parallel (DDP).
+Best for Multi-GPU setups (e.g., Dual RTX 4090). Generate output name based on the parameters it used.
 
 ```bash
-bash tools/train.sh configs/rtdetrv2/rtdetrv2_r50vd_6x_coco.yml
+bash train.sh --batch_size --epochs --lr --wd --queries --gpu --workers --eof
 ```
 
 ### 🔍 Differences: `train.py` vs `train.sh`
