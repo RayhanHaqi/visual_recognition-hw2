@@ -9,7 +9,6 @@ from transformers import RTDetrV2Config, RTDetrV2ForObjectDetection
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.optim.lr_scheduler import OneCycleLR
 
-# --- EARLY STOPPING LOGIC ---
 class EarlyStopping:
     def __init__(self, patience=15, min_delta=0.001, warm_up=10, collapse_threshold=0.40):
         self.patience = patience
@@ -21,32 +20,27 @@ class EarlyStopping:
         self.early_stop = False
 
     def __call__(self, current_score, epoch):
-        # 1. SELALU CATAT REKOR TERTINGGI (Meskipun masih dalam masa warm-up)
         if self.best_score is None or current_score > self.best_score:
             self.best_score = current_score
-            self.counter = 0  # Reset kesabaran jika rekor pecah
+            self.counter = 0  
         
-        # 2. JANGAN EKSEKUSI STOPPING JIKA MASIH WARM-UP
         if epoch < self.warm_up: 
             return False
         
-        # 3. SATPAM BERAKSI (Cek Kolaps)
-        # Sekarang dia membandingkan dengan rekor asli (0.46+), bukan skor ampas saat dia baru bangun
         if current_score < (self.collapse_threshold * self.best_score):
-            print(f"\n🚨 [EMERGENCY STOP] Epoch {epoch}: Model Collapse Detected (Skor hancur > 60%)!")
+            print(f"\n🚨 [EMERGENCY STOP] Epoch {epoch}: Model Collapse Detected (Score collapsed > 60%)!")
             self.early_stop = True
             return True
             
-        # 4. SATPAM BERAKSI (Cek Stagnasi)
         if current_score < self.best_score + self.min_delta:
             self.counter += 1
             if self.counter >= self.patience:
-                print(f"\n⏹️ [EARLY STOP] Tidak ada perbaikan mAP selama {self.patience} epoch.")
+                print(f"\n⏹️ [EARLY STOP] No improvement in {self.patience} epoch.")
                 self.early_stop = True
                 return True
                 
         return False
-# --- DATASET & COLLATOR ---
+    
 class CustomCocoDetection(CocoDetection):
     def __getitem__(self, index):
         id = self.ids[index]; img = self._load_image(id); tgt = self._load_target(id); orig_w, orig_h = img.size 
@@ -116,7 +110,6 @@ def main():
         with open(csv_path, 'w', newline='') as f:
             csv.writer(f).writerow(['Epoch', 'Train_Loss', 'Val_Loss', 'mAP_50_95', 'mAP_50', 'LR'])
 
-    # --- UNIFIED AUGMENTATION ---
     transform = transforms.Compose([
         transforms.Resize((320, 640)),
         transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),

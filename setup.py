@@ -3,7 +3,6 @@ import subprocess
 import tarfile
 from pathlib import Path
 
-# Coba import tqdm, jika belum ada install otomatis
 try:
     from tqdm import tqdm
 except ImportError:
@@ -16,23 +15,20 @@ def check_dataset_exists(extract_dir):
     return os.path.exists(train_json) and os.path.exists(valid_json)
 
 def setup_git_credentials():
-    print("\n🔧 5. Mengatur Konfigurasi Kredensial Git & LFS...")
+    print("\n🔧 5. Configuring Git Credentials...")
     
     try:
-        # Identitas & Credential Helper
-        subprocess.run(["git", "config", "--global", "user.email", "RayhanHaqi@github.com"], check=True)
-        subprocess.run(["git", "config", "--global", "user.name", "RayhanHaqi"], check=True)
+        subprocess.run(["git", "config", "--global", "user.email", "anon@users.noreply.github.com"], check=True)
+        subprocess.run(["git", "config", "--global", "user.name", "anon"], check=True)
         subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
-        print("   ✅ Identitas Git & Credential Helper berhasil diset.")
+        print("   ✅ Git identity and credential helper configured.")
         
-        # LFS Setup & Pull
         subprocess.run(["git", "lfs", "install"], check=True)
-        # Menarik file LFS asli jika repositori baru saja di-clone
-        subprocess.run(["git", "lfs", "pull"], check=False) # check=False karena kalau blm ada commit lfs bisa error
-        print("   ✅ Git LFS berhasil diinisialisasi dan siap digunakan.")
+        subprocess.run(["git", "lfs", "pull"], check=False)
+        print("   ✅ Git LFS successfully configured.")
         
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Terjadi kesalahan saat konfigurasi Git/LFS: {e}")
+        print(f"   ❌ Error configuring Git credentials: {e}")
 
 def setup_environment():
     extract_dir = "datasets"
@@ -43,27 +39,27 @@ def setup_environment():
     print("🚀 AUTOMATIC ENVIRONMENT SETUP")
     print("=======================================\n")
 
-    print("📦 1. Memeriksa dependencies...")
+    print("📦 1. Checking dependencies...")
     try:
         subprocess.run(["pip", "install", "-q", "-r", "requirements.txt"], check=True)
     except subprocess.CalledProcessError:
         pass
 
-    print("\n🔍 2. Memeriksa keberadaan Dataset...")
+    print("\n🔍 2. Checking dataset existence...")
     if check_dataset_exists(extract_dir):
-        print("   ✅ Dataset lengkap! Melewati Download & Ekstraksi.")
+        print("   ✅ Dataset is complete. Skipping download and extraction.")
     else:
-        print("   ⚠️ Dataset belum lengkap. Memulai Download...")
+        print("   ⚠️ Dataset is not complete. Starting download...")
         
         # --- DOWNLOAD ---
         if not os.path.exists(dataset_tar):
-            print("\n⬇️ 3. Mengunduh dataset...")
+            print("\n⬇️ 3. Downloading dataset...")
             subprocess.run(["gdown", url], check=True)
         else:
-            print(f"   ✅ File {dataset_tar} sudah ada, lanjut ke ekstraksi.")
+            print(f"   ✅ File {dataset_tar} is already downloaded. Skipping download.")
 
         # --- EKSTRAKSI DENGAN PROGRESS BAR ---
-        print(f"\n🗜️ 4. Mempersiapkan Ekstraksi (Membaca index file tar)...")
+        print(f"\n🗜️ 4. Preparing Extraction (Reading tar index file)...")
         os.makedirs(extract_dir, exist_ok=True)
 
         try:
@@ -84,45 +80,41 @@ def setup_environment():
                         member.uname = "root"; member.gname = "root"
                         members_to_extract.append(member)
 
-                print(f"   📦 Menemukan {len(members_to_extract)} file. Memulai ekstraksi...")
+                print(f"   📦 Found {len(members_to_extract)} file. Starting extraction...")
                 
                 # INI DIA MAGIC-NYA: PROGRESS BAR
-                for member in tqdm(members_to_extract, desc="Mengekstrak", unit="file"):
+                for member in tqdm(members_to_extract, desc="Extracting", unit="file"):
                     tar.extract(member, path=extract_dir)
                 
-            print("\n   ✅ Ekstraksi selesai dengan sukses!")
+            print("\n   ✅ Extraction completed successfully!")
             os.remove(dataset_tar)
-            print("   🧹 File .tar.gz telah dihapus.")
+            print("   🧹 File .tar.gz has been deleted.")
 
         except Exception as e:
-            print(f"\n   ❌ Terjadi kesalahan saat ekstraksi: {e}")
+            print(f"\n   ❌ Error during extraction: {e}")
 
-    # Memanggil konfigurasi Git LFS & OS
     setup_git_credentials()
 
-    # --- FUNGSI BARU: CHMOD +X UNTUK SCRIPT BASH ---
-    print("\n📜 6. Memeriksa script eksekusi (train.sh)...")
+    print("\n📜 6. Checking script execution permissions (train.sh)...")
     script_name = "train.sh"
     if os.path.exists(script_name):
         try:
             subprocess.run(["chmod", "+x", script_name], check=True)
-            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
+            print(f"   ✅ Automatic execution permissions added to {script_name}.")
         except subprocess.CalledProcessError as e:
-            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
+            print(f"   ❌ Error adding execution permissions: {e}")
     else:
-        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
-
+        print(f"   ℹ️ Script {script_name} not created, skipping chmod step.")
     script_name = "train-runpod.sh"
     if os.path.exists(script_name):
         try:
             subprocess.run(["chmod", "+x", script_name], check=True)
-            print(f"   ✅ Izin eksekusi otomatis ditambahkan ke {script_name}.")
+            print(f"   ✅ Automatic execution permissions added to {script_name}.")
         except subprocess.CalledProcessError as e:
-            print(f"   ❌ Gagal menambahkan izin eksekusi: {e}")
+            print(f"   ❌ Error adding execution permissions: {e}")
     else:
-        print(f"   ℹ️ Script {script_name} belum dibuat, melewati tahap chmod.")
-
-    print("\n🎉 Setup Selesai! Kamu siap jalankan training.")
+        print(f"   ℹ️ Script {script_name} not created, skipping chmod step.")
+    print("\n🎉 Setup is done. Ready to run training.")
 
 if __name__ == "__main__":
     setup_environment()
