@@ -1,7 +1,7 @@
 # Digit Detection Problem - RT-DETRv2 🚀
 **NYCU Visual Recognition using Deep Learning (Spring 2026) - Homework 2**
 
-This repository contains the official implementation for the Digit Detection Problem (Homework 2). By leveraging the **RT-DETRv2** architecture with a **ResNet-50** backbone, this project successfully secured **Rank 1** on the NYCU Visual Recognition Course (Spring 2026) Homework 2 CodaBench competition leaderboard with a Test score of **0.41**.
+This repository contains the official implementation for the Digit Detection Problem (Homework 2). By leveraging the **RT-DETRv2** architecture with a **ResNet-50** backbone, this project successfully secured high rank on the NYCU Visual Recognition Course (Spring 2026) Homework 2 CodaBench competition leaderboard with a Test score of **0.41**.
 
 ---
 
