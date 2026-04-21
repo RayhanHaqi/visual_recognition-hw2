@@ -60,7 +60,7 @@ python train.py --run_name --batch_size --epochs --lr --wd --queries --gpu --wor
 ```
 
 #### Option B: Using `train.sh` (Distributed Execution)
-Best for Multi-GPU setups (e.g., Dual RTX 4090). Generate output name based on the parameters it used.
+Best for Multi-PC / Container setups (e.g., Dual RTX 4090). Generate output name based on the parameters it used.
 
 ```bash
 bash train.sh --batch_size --epochs --lr --wd --queries --gpu --workers --eof
